@@ -15,11 +15,33 @@ pick a name, and play Texas Hold'em against each other **and against AI bot play
    strategy to an LLM without touching game code. Bots only ever see what a human in their seat would see.
 2. **Real multiplayer poker** that several people on the same network can play at once, from laptops or phones.
 3. **Polished, animated table** (PixiJS + gsap). Every state change is animated, and the info a player needs is always on screen.
+   See **Design language** below. It's a firm user requirement.
 4. **Fair, server-authoritative game.** The engine is pure and tested; the server never leaks hidden cards;
    chips are conserved (bankrolls + house bank + tables never change in total).
 5. **Light humor, used sparingly.** The currency is "Dining Dollars" ($), the tables are "Freshman Meal Plan" and "Unlimited Swipes",
    and a bust says "Your meal plan is empty". **Don't add more school jokes.** The user found heavier use unfunny
    (no "Ramen Ronnie" bot names, no long joke paragraphs, no "go grab a snack").
+
+---
+
+## Design language (user requirement)
+
+- **KSU black & gold.** Gold is Pantone 1235 C = `#FFB81C`. All colors are tokens in `:root` of `apps/client/src/styles.css`
+  (`--gold`, `--bg`, `--surface`, `--line`, `--text`, `--muted`, `--danger`, ...). The Pixi canvas mirrors them as constants
+  at the top of `PokerRenderer.ts` (`GOLD`, `INK`, `SURFACE`, `LINE`, ...).
+- **Sharp and flat.** Square corners (radius 0; 2px max on tiny things), 1px rules for structure, solid fills.
+  **No glows, gradients, blur or soft shadows.** The user explicitly dislikes "tech-bro glow".
+- **Type:** Oswald (condensed, uppercase, letter-spaced) for headings, labels, numbers and buttons; Inter for body text.
+  Both are bundled via `@fontsource` (works offline on LAN). Pixi waits for Oswald to load before drawing.
+- Buttons: `.primary` (solid gold, black text), `.secondary` (black, gray border → gold on hover), `.primary.danger`.
+  Tags: `.tag` / `.tag.gold` / `.tag.danger` (square, outlined).
+- **Table screen layout:**
+  - **`TableStrip`** across the top, between two gold rules with cells split by vertical bars. It shows **only
+    table-wide info** (name, blinds, hand #, stage, pot, dealer, SB/BB, who's acting plus their clock, between-hands status).
+    Every player must see the same strip, so never put personal data in it.
+  - **`PlayerSidebar`** (right, 340px) holds everything personal: name, stack, in-pot, your clock, tags, actions,
+    ready/rebuy, cash out. Below 900px it stacks under the table with the actions first.
+  - The felt is black with a gold rail. The table name and blinds are **not** drawn on the canvas (they're in the strip).
 
 ---
 
@@ -56,11 +78,12 @@ apps/
     src/networking/socket.ts  Typed Socket.IO client; per-browser session token (localStorage) for seat reclaim
     src/networking/pokerStore.ts  Buffers every poker:state message outside React (animations never drop events)
     src/pages/                NamePage, HomePage, PokerLobbyPage (sortable/filterable room list, buy-in/create dialogs),
-                              PokerTablePage (info strip, clocks, ready-up, rebuy dialog, leave dialog, cashed-out result view)
+                              PokerTablePage (shared TableStrip + personal PlayerSidebar with clock/actions/ready-up,
+                              rebuy dialog, leave dialog, cashed-out result view)
     src/game/poker/
       pixiApp.ts              ONE Pixi Application for the whole session (canvas is moved between pages; never destroyed)
       PokerScene.tsx          Mounts the shared canvas + creates a PokerRenderer per table visit
-      PokerRenderer.ts        Imperative scene: seats, cards, chips, pots; plays server events as gsap timelines,
+      PokerRenderer.ts        Imperative scene (black felt, gold rail): seats, cards, chips, pots; plays server events as gsap timelines,
                               then snaps to the authoritative view
       ActionBar.tsx           Fold / Check / Call / Raise (presets, slider, typed amount); uniform 52px controls
       assets.ts               Card/chip textures (public/assets/cards/{rank}{S|H|D|C}.svg + back.svg, chips/chip.svg)
@@ -167,7 +190,8 @@ scripts/                      bots.mjs (e2e smoke), generate-placeholder-cards.m
       "thinking…", centered pot + side pots, hand-name pills above cards; info strip; live clocks in seconds
 - [x] Action bar with presets, slider, typed amount (Enter submits); mobile layout (sticky bar, Fold/Check first)
 - [x] Dining Dollars currency + light humor
-- [x] `git init` done and stray root `index.ts` removed (no commits yet)
+- [x] Black & gold sharp/flat redesign site-wide; shared table strip + personal sidebar; black felt
+- [x] Git repo initialized on `main` with an initial commit; stray root `index.ts` removed
 - [x] Tests: 37 Vitest tests (engine + rooms with fake timers incl. 30-min soak); `scripts/bots.mjs` e2e
 
 **Not done / known gaps**
@@ -204,7 +228,6 @@ scripts/                      bots.mjs (e2e smoke), generate-placeholder-cards.m
 - [ ] Replace placeholder card SVGs with real art
 - [ ] Add a leaderboard (bankroll ranking), needs persistence first
 - [ ] Consider a short "Folded · $10 in pot" style label so dead money on folded seats isn't confusing
-- [ ] First commit (the repo is initialized but has no commits; ask the user before committing)
 
 ---
 

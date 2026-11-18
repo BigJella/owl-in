@@ -17,8 +17,15 @@ const BOARD_H = 94;
 /** Where dealt cards fly from: the top edge of the table, clear of the stage label. */
 const DECK = { x: CX, y: CY - 215 };
 const POT = { x: CX, y: CY + 78 };
-const FONT = "Inter, system-ui, -apple-system, Segoe UI, sans-serif";
-const GOLD = 0xe5b85b;
+const FONT = '"Oswald", "Inter", system-ui, sans-serif';
+/** KSU gold (Pantone 1235 C). */
+const GOLD = 0xffb81c;
+const INK = 0x0a0a0a;
+const SURFACE = 0x141414;
+const LINE = 0x2e2e2e;
+const TEXT = 0xf2f2f2;
+const MUTED = 0x8a8a8a;
+const DANGER = 0xe0393e;
 
 interface Point {
   x: number;
@@ -57,7 +64,7 @@ interface SeatNode {
 
 const fmt = formatDD;
 
-function label(size: number, color: number, weight: "400" | "600" | "800" = "600") {
+function label(size: number, color: number, weight: "400" | "500" | "600" | "700" = "500") {
   const t = new Text({ text: "", style: { fontFamily: FONT, fontSize: size, fill: color, fontWeight: weight } });
   t.anchor.set(0.5);
   return t;
@@ -77,14 +84,10 @@ export class PokerRenderer {
   private readonly seats: SeatNode[] = [];
   private readonly board: Sprite[] = [];
   private readonly potChip: Sprite;
-  private readonly potText = label(18, 0xffffff, "800");
-  private readonly sidePotText = label(13, 0xd8e4dc);
-  private readonly infoText = label(13, 0xb6c0b8);
-  private readonly titleText = label(11, 0xffffff);
+  private readonly potText = label(18, 0xffffff, "700");
+  private readonly sidePotText = label(13, 0xcfcfcf);
   /** Showdown hand names: drawn above all cards so nothing covers them. */
   private readonly handsLayer = new Container();
-  /** Humans still to ready up between hands (for the sub-label). */
-  private notReady = 0;
   private readonly dealerButton = new Container();
 
   private view: PokerTableView | null = null;
@@ -98,7 +101,6 @@ export class PokerRenderer {
   private clock: { seat: number; endsAt: number; total: number } | null = null;
   /** Bot currently "thinking" (bots have no clock). */
   private thinkingSeat: number | null = null;
-  private nextHandAt: number | null = null;
 
   constructor(
     private readonly app: Application,
@@ -110,10 +112,7 @@ export class PokerRenderer {
     this.potText.anchor.set(0, 0.5);
     this.potText.y = POT.y;
     this.sidePotText.position.set(CX, POT.y + 28);
-    this.infoText.position.set(CX, CY - 80);
-    this.titleText.position.set(CX, CY - 175);
-    this.titleText.alpha = 0.45;
-    this.titleText.style.letterSpacing = 5;
+    this.potText.style.letterSpacing = 1;
 
     for (let i = 0; i < 5; i += 1) {
       const card = this.makeCard(BOARD_W, BOARD_H);
@@ -122,8 +121,8 @@ export class PokerRenderer {
       this.cardsLayer.addChild(card);
     }
 
-    const button = new Graphics().circle(0, 0, 13).fill(0xfdfbf4).stroke({ width: 2, color: 0x8c6a24 });
-    const d = label(13, 0x1d2021, "800");
+    const button = new Graphics().rect(-12, -12, 24, 24).fill(TEXT).stroke({ width: 2, color: GOLD });
+    const d = label(14, INK, "700");
     d.text = "D";
     this.dealerButton.addChild(button, d);
     this.dealerButton.visible = false;
@@ -132,11 +131,9 @@ export class PokerRenderer {
 
     this.root.addChild(
       this.felt,
-      this.titleText,
       this.potChip,
       this.potText,
       this.sidePotText,
-      this.infoText,
       this.betsLayer,
       this.cardsLayer,
       this.dealerButton,
@@ -167,7 +164,6 @@ export class PokerRenderer {
       view.toAct !== null && view.turnRemainingMs !== null
         ? { seat: view.toAct, endsAt: received.receivedAt + view.turnRemainingMs, total: Math.max(view.turnRemainingMs, 20_000) }
         : null;
-    this.nextHandAt = view.nextHandInMs === null ? null : received.receivedAt + view.nextHandInMs;
     const acting = view.toAct === null ? null : view.seats[view.toAct];
     this.thinkingSeat = acting?.kind === "bot" && view.phase !== "idle" ? acting.seat : null;
 
@@ -418,8 +414,6 @@ export class PokerRenderer {
   /** Snap every element to the server's view. */
   private sync(view: PokerTableView) {
     this.view = view;
-    this.titleText.text = `${view.name.toUpperCase()}  ·  ${fmt(view.smallBlind)}/${fmt(view.bigBlind)}`;
-    this.notReady = view.seats.filter((s) => s?.ready === false).length;
 
     view.seats.forEach((s, i) => {
       const node = this.seats[i]!;
@@ -453,7 +447,7 @@ export class PokerRenderer {
           : s.status === "waiting"
             ? "NEXT HAND"
             : ""; // all-in already shows in the action label
-      node.status.style.fill = s.cashingOut || !s.connected ? 0xff8a80 : 0xd2c8a8;
+      node.status.style.fill = s.cashingOut || !s.connected ? DANGER : s.ready === true ? GOLD : MUTED;
       node.status.style.fontSize = s.cashingOut ? 12 : 10;
       node.root.alpha = s.status === "waiting" ? 0.55 : s.status === "folded" ? 0.7 : 1;
       this.drawPlate(node, view.toAct === i);
@@ -504,7 +498,7 @@ export class PokerRenderer {
     if (!text) return;
     const w = node.handText.width + 16;
     const h = node.handText.height + 6;
-    node.handBg.clear().roundRect(-w / 2, -h / 2, w, h, 6).fill({ color: 0x111315, alpha: 0.88 }).stroke({ width: 1, color: GOLD, alpha: 0.6 });
+    node.handBg.clear().rect(-w / 2, -h / 2, w, h).fill({ color: INK, alpha: 0.94 }).stroke({ width: 1, color: GOLD });
   }
 
   private resetHand() {
@@ -571,7 +565,7 @@ export class PokerRenderer {
       node.timer.clear();
       if (this.thinkingSeat === seat && node.root.visible) {
         node.clock.text = `thinking${".".repeat(1 + (Math.floor(now / 400) % 3))}`;
-        node.clock.style.fill = 0x8fb8ff;
+        node.clock.style.fill = MUTED;
         node.clock.style.fontSize = 15;
         node.status.visible = false;
         continue;
@@ -585,20 +579,10 @@ export class PokerRenderer {
       node.clock.style.fontSize = 20;
       const remaining = Math.max(0, this.clock.endsAt - now);
       const fraction = Math.min(1, remaining / this.clock.total);
-      const color = fraction > 0.5 ? 0x65bc75 : fraction > 0.2 ? GOLD : 0xd9534f;
-      node.timer.roundRect(-72, 39, 144 * fraction, 5, 2).fill(color);
+      const color = fraction > 0.25 ? GOLD : DANGER;
+      node.timer.rect(-75, 36, 150 * fraction, 4).fill(color);
       node.clock.text = `${Math.ceil(remaining / 1000)}s`;
       node.clock.style.fill = color;
-    }
-    if (this.view?.phase !== "idle" || this.current) {
-      this.infoText.text = "";
-    } else if (this.nextHandAt !== null) {
-      const seconds = Math.max(0, Math.ceil((this.nextHandAt - now) / 1000));
-      this.infoText.text = seconds > 1 ? `Next hand in ${seconds}s` : "Dealing…";
-    } else if (this.notReady > 0) {
-      this.infoText.text = `Waiting for ${this.notReady} player${this.notReady === 1 ? "" : "s"} to ready up`;
-    } else {
-      this.infoText.text = "";
     }
   };
 
@@ -611,16 +595,16 @@ export class PokerRenderer {
   };
 
   private drawFelt() {
+    // Black felt, a black rail edged in gold, and a faint inner betting line. Flat: no shadows.
     this.felt
-      .ellipse(CX, CY + 12, 478, 252)
-      .fill({ color: 0x000000, alpha: 0.35 })
-      .ellipse(CX, CY, 478, 250)
-      .fill(0x5a3b29)
-      .ellipse(CX, CY, 456, 228)
-      .fill(0x0d6e4d)
-      .stroke({ width: 4, color: 0xa18b67 })
-      .ellipse(CX, CY, 380, 170)
-      .stroke({ width: 2, color: 0xffffff, alpha: 0.06 });
+      .ellipse(CX, CY, 476, 248)
+      .fill(INK)
+      .stroke({ width: 2, color: GOLD })
+      .ellipse(CX, CY, 452, 224)
+      .fill(0x121212)
+      .stroke({ width: 1, color: GOLD, alpha: 0.55 })
+      .ellipse(CX, CY, 372, 164)
+      .stroke({ width: 1, color: 0x262626 });
   }
 
   /** Seat positions rotate so your own seat is always bottom-centre. */
@@ -666,34 +650,34 @@ export class PokerRenderer {
     const root = new Container();
     const plate = new Graphics();
     const timer = new Graphics();
-    const name = label(14, 0xffffff, "800");
+    const name = label(14, 0xffffff, "700");
     name.position.set(0, -18);
-    const stack = label(15, GOLD, "800");
+    const stack = label(15, GOLD, "700");
     stack.position.set(0, 2);
-    const inPot = label(11, 0x9fb5aa, "600");
+    const inPot = label(11, MUTED, "500");
     inPot.position.set(0, 21);
-    const badgeText = label(9, 0x17191a, "800");
+    const badgeText = label(9, 0xcfcfcf, "600");
     badgeText.text = "BOT";
     const badge = new Container();
-    badge.addChild(new Graphics().roundRect(-15, -8, 30, 16, 4).fill(0x8fb8ff), badgeText);
+    badge.addChild(new Graphics().rect(-15, -8, 30, 16).fill(INK).stroke({ width: 1, color: MUTED }), badgeText);
     badge.position.set(62, -36);
     badge.visible = false;
-    const status = label(10, 0xd2c8a8, "800");
+    const status = label(10, MUTED, "600");
     status.position.set(0, -48);
-    const action = label(14, 0xffffff, "800");
+    const action = label(14, 0xffffff, "700");
     action.position.set(0, 60);
-    const clock = label(20, 0x65bc75, "800");
+    const clock = label(20, GOLD, "700");
     clock.position.set(0, -52);
-    const roleText = label(10, 0x17191a, "800");
+    const roleText = label(10, 0x17191a, "700");
     const role = new Container();
-    role.addChild(new Graphics().roundRect(-14, -8, 28, 16, 4).fill(0xfdfbf4), roleText);
+    role.addChild(new Graphics().rect(-14, -8, 28, 16).fill(GOLD), roleText);
     role.position.set(-62, -36);
     role.visible = false;
     root.addChild(plate, timer, name, stack, inPot, badge, role, status, action, clock);
 
     const cards: [Sprite, Sprite] = [this.makeCard(CARD_W, CARD_H), this.makeCard(CARD_W, CARD_H)];
     this.cardsLayer.addChild(...cards);
-    const handText = label(12, 0xffffff, "800");
+    const handText = label(12, 0xffffff, "700");
     const handBg = new Graphics();
     const hand = new Container();
     hand.addChild(handBg, handText);
@@ -701,7 +685,7 @@ export class PokerRenderer {
     this.handsLayer.addChild(hand);
     const betChip = this.makeChip();
     betChip.visible = false;
-    const betText = label(13, 0xffffff, "800");
+    const betText = label(13, 0xffffff, "700");
     betText.visible = false;
     this.betsLayer.addChild(betChip, betText);
     this.seatsLayer.addChild(root);
@@ -733,9 +717,9 @@ export class PokerRenderer {
   private drawPlate(node: SeatNode, active: boolean) {
     node.plate
       .clear()
-      .roundRect(-75, -36, 150, 72, 12)
-      .fill({ color: 0x1d2021, alpha: 0.94 })
-      .stroke({ width: active ? 3 : 1.5, color: active ? GOLD : 0x45494a });
+      .rect(-75, -36, 150, 72)
+      .fill(SURFACE)
+      .stroke({ width: active ? 2 : 1, color: active ? GOLD : LINE });
   }
 
   private makeCard(width: number, height: number): Sprite {

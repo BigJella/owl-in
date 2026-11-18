@@ -25,7 +25,7 @@ const font = "font-family='Georgia, serif'";
 for (const suit of SUITS) {
   for (const rank of RANKS) {
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
-  <rect x="1" y="1" width="${W - 2}" height="${H - 2}" rx="12" fill="#fdfbf4" stroke="#cfc8b3" stroke-width="2"/>
+  <rect x="1" y="1" width="${W - 2}" height="${H - 2}" rx="3" fill="#fdfbf4" stroke="#cfc8b3" stroke-width="2"/>
   <text x="12" y="36" ${font} font-size="30" font-weight="700" fill="${suit.color}">${rank}</text>
   <text x="14" y="62" ${font} font-size="24" fill="${suit.color}">${suit.symbol}</text>
   <text x="${W / 2}" y="${H / 2 + 26}" ${font} font-size="76" text-anchor="middle" fill="${suit.color}">${suit.symbol}</text>
@@ -43,13 +43,13 @@ writeFileSync(
   `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
   <defs>
     <pattern id="p" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-      <rect width="14" height="14" fill="#5b2a86"/><rect width="7" height="14" fill="#6d36a0"/>
+      <rect width="14" height="14" fill="#0d0d0d"/><rect width="7" height="14" fill="#1a1a1a"/>
     </pattern>
   </defs>
-  <rect x="1" y="1" width="${W - 2}" height="${H - 2}" rx="12" fill="#fdfbf4" stroke="#cfc8b3" stroke-width="2"/>
-  <rect x="10" y="10" width="${W - 20}" height="${H - 20}" rx="8" fill="url(#p)"/>
-  <circle cx="${W / 2}" cy="${H / 2}" r="26" fill="#e5b85b"/>
-  <text x="${W / 2}" y="${H / 2 + 11}" ${font} font-size="32" font-weight="700" text-anchor="middle" fill="#2a1840">O</text>
+  <rect x="1" y="1" width="${W - 2}" height="${H - 2}" rx="3" fill="#000" stroke="#FFB81C" stroke-width="2"/>
+  <rect x="10" y="10" width="${W - 20}" height="${H - 20}" rx="1" fill="url(#p)"/>
+  <rect x="${W / 2 - 24}" y="${H / 2 - 24}" width="48" height="48" fill="#FFB81C" transform="rotate(45 ${W / 2} ${H / 2})"/>
+  <text x="${W / 2}" y="${H / 2 + 11}" ${font} font-size="32" font-weight="700" text-anchor="middle" fill="#000">O</text>
 </svg>
 `,
 );
@@ -57,9 +57,9 @@ writeFileSync(
 writeFileSync(
   join(chipsDir, "chip.svg"),
   `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
-  <circle cx="32" cy="32" r="30" fill="#e5b85b" stroke="#8c6a24" stroke-width="2"/>
+  <circle cx="32" cy="32" r="30" fill="#FFB81C" stroke="#8a6200" stroke-width="2"/>
   <g stroke="#fff" stroke-width="7" stroke-dasharray="9 14.6" fill="none"><circle cx="32" cy="32" r="25"/></g>
-  <circle cx="32" cy="32" r="17" fill="#d2a447" stroke="#8c6a24" stroke-width="1.5"/>
+  <circle cx="32" cy="32" r="17" fill="#e0a010" stroke="#8a6200" stroke-width="1.5"/>
 </svg>
 `,
 );

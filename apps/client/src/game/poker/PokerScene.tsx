@@ -12,7 +12,12 @@ export function PokerScene() {
     let cancelled = false;
     let cleanup: (() => void) | null = null;
 
-    Promise.all([getPixiApp(), loadPokerTextures()]).then(([app, textures]) => {
+    // Pixi rasterizes text once, so wait for the bundled fonts before drawing any.
+    const fonts = Promise.all([
+      document.fonts.load('600 14px "Oswald"'),
+      document.fonts.load('700 14px "Oswald"'),
+    ]).catch(() => undefined);
+    Promise.all([getPixiApp(), loadPokerTextures(), fonts]).then(([app, textures]) => {
       const el = host.current;
       if (cancelled || !el) return;
       el.appendChild(app.canvas);

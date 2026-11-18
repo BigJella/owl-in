@@ -143,7 +143,8 @@ export function PokerLobbyPage({ session, onBack }: PokerLobbyPageProps) {
                   <i key={i} className={i < room.humans ? "human" : i < seated ? "bot" : ""} />
                 ))}
                 <small>
-                  {room.humans} 👤 · {room.bots} 🤖{room.waiting ? ` · ${room.waiting} waiting` : ""}
+                  {room.humans} {room.humans === 1 ? "player" : "players"} · {room.bots} {room.bots === 1 ? "bot" : "bots"}
+                  {room.waiting ? ` · ${room.waiting} waiting` : ""}
                   {room.cashingOut ? ` · ${room.cashingOut} leaving` : ""}
                 </small>
               </span>
