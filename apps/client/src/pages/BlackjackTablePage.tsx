@@ -4,6 +4,8 @@ import {
   BJ_MAX_SPOTS_PER_PLAYER,
   BJ_SPOTS,
   BJ_STAGE_LABEL,
+  BJ_TIME_BANK_MAX_MS,
+  BJ_TURN_REFILL_MS,
   formatDD,
   type BlackjackAction,
   type BlackjackTableView,
@@ -203,6 +205,8 @@ export function BlackjackTablePage({ onLeave, playerName }: { onLeave: () => voi
                 graceLabel="Place bets"
                 drainLabel="Betting on your time bank"
                 drainNote="Press Deal to stop the drain"
+                refillMs={BJ_TURN_REFILL_MS}
+                maxMs={BJ_TIME_BANK_MAX_MS}
               />
             )}
           </div>

@@ -138,9 +138,43 @@ describe("playing", () => {
     r.clearBet(player, 1);
     r.clearBet(player, 2);
     r.setReady(player);
-    await vi.advanceTimersByTimeAsync(r.timing.gapMs + 20_000 + 10_000);
+    await vi.advanceTimersByTimeAsync(r.timing.gapMs + 30_000 + 10_000);
     const acted = messages.flatMap((m) => m.events).filter((e) => e.type === "playerActed" && e.spot === 0);
     expect(acted).toEqual([{ type: "playerActed", spot: 0, hand: 0, action: "stand", amount: 0 }]);
+    r.close();
+  });
+
+  it("adds 30s when the turn passes to you, 5s per further decision, up to 60s", async () => {
+    // Human alone on spot 0: 10,2 vs dealer 9 (hole 7), then 2s from the shoe.
+    const r = room({ table: rigged("10 9 2 7") });
+    const { player } = human();
+    r.join(player);
+    for (const spot of [0, 1, 2]) r.bet(player, spot, 10);
+    r.clearBet(player, 1);
+    r.clearBet(player, 2);
+    r.setReady(player);
+    const turnBank = async () => {
+      await vi.advanceTimersByTimeAsync(1); // let the previous action land
+      for (let i = 0; i < 40 && !r.viewFor(player.id).myLegal; i += 1) await vi.advanceTimersByTimeAsync(100);
+      return r.viewFor(player.id).myTimeBankMs;
+    };
+    // The clock is live, so allow for the polling steps.
+    const near = (ms: number, target: number) => {
+      expect(ms).toBeLessThanOrEqual(target);
+      expect(ms).toBeGreaterThan(target - 500);
+    };
+    near(await turnBank(), 30_000); // the turn came to us
+    r.submitAction(player, "hit");
+    near(await turnBank(), 35_000); // same player again: +5s
+    r.submitAction(player, "hit");
+    near(await turnBank(), 40_000);
+    r.submitAction(player, "stand");
+
+    // Next round: 40s banked + 30s, capped at 60s.
+    for (let i = 0; i < 100 && r.stage() !== "betting"; i += 1) await vi.advanceTimersByTimeAsync(250);
+    r.bet(player, 0, 10);
+    r.setReady(player);
+    near(await turnBank(), 60_000);
     r.close();
   });
 

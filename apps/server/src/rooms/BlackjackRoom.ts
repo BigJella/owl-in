@@ -7,8 +7,9 @@ import {
   BJ_MAX_SPOTS_PER_PLAYER,
   BJ_PENETRATION,
   BJ_SPOTS,
-  TIME_BANK_MAX_MS,
-  TIME_BANK_REFILL_MS,
+  BJ_DECISION_REFILL_MS,
+  BJ_TIME_BANK_MAX_MS,
+  BJ_TURN_REFILL_MS,
   formatDD,
   type BlackjackRoomSummary,
   type BlackjackSpotView,
@@ -146,6 +147,8 @@ export class BlackjackRoom {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private turn: Turn | null = null;
   private turnCounter = 0;
+  /** Who made the previous decision this round: same player again only earns the small refill. */
+  private lastActor: string | null = null;
   private seq = 0;
   private readonly bank: HouseBank;
 
@@ -459,6 +462,7 @@ export class BlackjackRoom {
 
   private deal() {
     this.lastRoundStartedAt = Date.now();
+    this.lastActor = null;
     this.afterEvents(this.table.deal());
   }
 
@@ -507,8 +511,10 @@ export class BlackjackRoom {
     const human = owner instanceof HumanPlayer && !away;
     let budgetMs = 0;
     let thinkMs = 0;
+    const refill = owner && owner.id === this.lastActor ? BJ_DECISION_REFILL_MS : BJ_TURN_REFILL_MS;
+    this.lastActor = owner?.id ?? null;
     if (human) {
-      member!.timeBankMs = Math.min(TIME_BANK_MAX_MS, member!.timeBankMs + TIME_BANK_REFILL_MS);
+      member!.timeBankMs = Math.min(BJ_TIME_BANK_MAX_MS, member!.timeBankMs + refill);
       budgetMs = member!.timeBankMs;
     } else if (owner instanceof BlackjackBot) {
       const [min, max] = this.timing.botDelayMs;

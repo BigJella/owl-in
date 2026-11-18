@@ -236,8 +236,9 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
 - Rounds: a **15s betting window** (closes early once every connected human holding a spot has pressed Deal). Players who had
   a bet **last round** and still hold a spot can keep betting past the window **on their time bank** (it drains, like poker's
   ready-up; Deal stops it; at 0 bets close). New players get only the window. Then the deal,
-  an 8s insurance window when the dealer shows an ace, then turns. Human turns use the same time bank as poker
-  (+20s per hand, cap 120s, **auto-stand** at 0). Bots think 0.8–1.6s. Results stay up 3s (after their animation),
+  an 8s insurance window when the dealer shows an ace, then turns. Human turns use a time bank with **blackjack-specific refills**:
+  **+30s when the turn passes to you** from someone else, **+5s for each further decision** you make in a row (hits, your next
+  hand or spot), **capped at 60s**, auto-stand at 0 (`BJ_TURN_REFILL_MS`, `BJ_DECISION_REFILL_MS`, `BJ_TIME_BANK_MAX_MS`). Bots think 0.8–1.6s. Results stay up 3s (after their animation),
   then cards are swept to the tray. Bot-only tables deal one round per 20s.
 - Spots you didn't bet on are released when betting closes. Rebet repeats last round's bets.
 - Leaving: between rounds it's immediate (pre-deal bets refunded). With hands in play it's queued ("Leave after this round"
@@ -267,7 +268,7 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
 - [x] Shared fixed-grid table strip (identical for all players, no shifting); sidebar with static info top / controls bottom;
       time bank + "+20s next turn" preview between turns
 - [x] Git repo on `main` (history: initial commit → UI rework → UI improvements → sidebar → table/sidebar polish)
-- [x] Tests: 69 Vitest tests (poker + blackjack engines, rooms with fake timers incl. soaks); `scripts/bots.mjs` and
+- [x] Tests: 70 Vitest tests (poker + blackjack engines, rooms with fake timers incl. soaks); `scripts/bots.mjs` and
       `scripts/blackjack-bots.mjs` e2e
 - [x] Blackjack: engine (shoe, S17, 3:2, double/split/insurance/late surrender), BlackjackRoom (spots, bot fill 1–3,
       betting window, insurance, time bank), lobby + table page + Pixi renderer (shoe/tray levels, deal/flip/payout/sweep/shuffle

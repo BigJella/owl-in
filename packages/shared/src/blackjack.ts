@@ -22,6 +22,10 @@ export const BJ_MAX_BET_MULT = 50;
 export const BJ_ALLOWED_MIN_BETS = [10, 25, 50, 100, 500] as const;
 /** Minimums at or above this are badged "High Roller". */
 export const BJ_HIGH_ROLLER_MIN_BET = 100;
+/** Time bank: +30s when the turn passes to you from someone else, +5s for each further decision of yours, max 60s. */
+export const BJ_TURN_REFILL_MS = 30_000;
+export const BJ_DECISION_REFILL_MS = 5_000;
+export const BJ_TIME_BANK_MAX_MS = 60_000;
 
 export type BlackjackStage = "waiting" | "betting" | "insurance" | "playing" | "settled";
 

@@ -30,6 +30,8 @@ export function ClockBlock({
   graceLabel = "Ready up",
   drainLabel = "Not ready · bank draining",
   drainNote = "Ready up to stop the drain",
+  refillMs = TIME_BANK_REFILL_MS,
+  maxMs = TIME_BANK_MAX_MS,
 }: {
   clock: Clock;
   timeoutNote?: string;
@@ -37,6 +39,9 @@ export function ClockBlock({
   graceLabel?: string;
   drainLabel?: string;
   drainNote?: string;
+  /** What your next turn adds, and the cap (poker by default). */
+  refillMs?: number;
+  maxMs?: number;
 }) {
   const label = {
     rebuy: "Meal plan empty",
@@ -47,10 +52,10 @@ export function ClockBlock({
   }[clock.kind];
   const urgent = clock.kind === "rebuy" || clock.kind === "draining" || (clock.kind === "turn" && clock.seconds <= 5);
   const live = clock.kind !== "bank";
-  // Each turn adds TIME_BANK_REFILL_MS, capped at TIME_BANK_MAX_MS.
+  // Each turn adds refillMs, capped at maxMs.
   const refill =
     clock.kind === "bank"
-      ? Math.max(0, Math.min(TIME_BANK_REFILL_MS, TIME_BANK_MAX_MS - clock.seconds * 1000)) / 1000
+      ? Math.max(0, Math.min(refillMs, maxMs - clock.seconds * 1000)) / 1000
       : null;
   const note = {
     rebuy: "Reload or cash out",
