@@ -16,10 +16,13 @@ import { socket } from "../networking/socket";
 const fmt = formatDD;
 const seconds = (ms: number) => Math.max(0, Math.ceil(ms / 1000));
 
-/** Decks left in the shoe, to the nearest half deck (what you'd estimate from the discard tray). */
-function decksLeft(view: BlackjackTableView): string {
-  const halves = Math.round((view.shoe.cardsRemaining / 52) * 2) / 2;
-  return `${halves % 1 === 0 ? halves : `${Math.floor(halves)}½`} ${halves === 1 ? "deck" : "decks"}`;
+/** Roughly where we are in the shoe. Deliberately vague: estimating decks left is the player's job. */
+function shoeStage(view: BlackjackTableView): string {
+  const level = view.shoe.level;
+  if (level >= 0.8) return "Fresh";
+  if (level >= 0.55) return "Early";
+  if (level >= 0.4) return "Middle";
+  return "Late";
 }
 
 /** The shared strip across the top: table-wide information only (identical for everyone). */
@@ -36,6 +39,8 @@ function TableStrip({ received, now }: { received: ReceivedBlackjack; now: numbe
         Bets close<b className="strip-clock">{seconds(view.phaseRemainingMs - elapsed)}s</b>
       </>
     );
+  } else if (view.stage === "betting" && view.waitingFor.length > 0) {
+    status = `Waiting for ${view.waitingFor.join(", ")}`;
   } else if (view.stage === "insurance" && view.phaseRemainingMs !== null) {
     status = (
       <>
@@ -79,7 +84,7 @@ function TableStrip({ received, now }: { received: ReceivedBlackjack; now: numbe
       </div>
       <div className="strip-cell">
         <small>Shoe</small>
-        <span title={`${view.shoe.decks}-deck shoe`}>{decksLeft(view)}</span>
+        <span title={`${view.shoe.decks}-deck shoe`}>{shoeStage(view)}</span>
       </div>
       <div className="strip-cell">
         <small>Dealer</small>
@@ -98,6 +103,13 @@ function myClock(received: ReceivedBlackjack, now: number): Clock | null {
   const elapsed = now - received.receivedAt;
   const myTurn = view.toAct !== null && view.mySpots.includes(view.toAct.spot) && view.turnRemainingMs !== null;
   if (myTurn) return { kind: "turn", seconds: seconds(view.turnRemainingMs! - elapsed) };
+  // Played last round and still betting: the window, then your time bank keeps bets open.
+  if (view.myBettingClock === "window" && view.phaseRemainingMs !== null) {
+    const windowLeft = view.phaseRemainingMs - elapsed;
+    if (windowLeft > 0) return { kind: "grace", seconds: seconds(windowLeft), bank: Math.floor(view.myTimeBankMs / 1000) };
+    return { kind: "draining", seconds: seconds(view.myTimeBankMs + windowLeft) };
+  }
+  if (view.myBettingClock === "bank") return { kind: "draining", seconds: seconds(view.myTimeBankMs - elapsed) };
   return { kind: "bank", seconds: Math.floor(view.myTimeBankMs / 1000) };
 }
 
@@ -184,12 +196,26 @@ export function BlackjackTablePage({ onLeave, playerName }: { onLeave: () => voi
               </div>
             </div>
 
-            {clock && <ClockBlock clock={clock} timeoutNote="Auto stand at 0" />}
+            {clock && (
+              <ClockBlock
+                clock={clock}
+                timeoutNote="Auto stand at 0"
+                graceLabel="Place bets"
+                drainLabel="Betting on your time bank"
+                drainNote="Press Deal to stop the drain"
+              />
+            )}
           </div>
 
           <div className="panel-controls">
             {view && view.stage === "betting" && <BetPanel view={view} selected={selected} onSelect={setSelected} onError={showError} />}
-            {view?.myInsurance && <InsurancePanel cost={view.myInsurance.cost} hands={view.myInsurance.spots.length} />}
+            {view?.myInsurance && (
+              <InsurancePanel
+                cost={view.myInsurance.cost}
+                hands={view.myInsurance.spots.length}
+                blackjack={view.myInsurance.spots.some((s) => view.spots[s]?.hands[0]?.status === "blackjack")}
+              />
+            )}
             {view && myTurn && <PlayPanel view={view} />}
             {view && !myTurn && myHands && view.stage === "playing" && (
               <p className="muted waiting-note">
@@ -378,13 +404,14 @@ function BetPanel(props: {
   );
 }
 
-function InsurancePanel({ cost, hands }: { cost: number; hands: number }) {
+function InsurancePanel({ cost, hands, blackjack }: { cost: number; hands: number; blackjack: boolean }) {
   return (
     <div className="ready-panel">
       <div>
         <strong>Dealer shows an ace.</strong>{" "}
         <span className="muted">
           Insure {hands === 1 ? "your hand" : `your ${hands} hands`} for {fmt(cost)}? Pays 2 to 1.
+          {blackjack && " Insuring a blackjack locks in even money instead of 3:2."}
         </span>
       </div>
       <div className="bet-actions">

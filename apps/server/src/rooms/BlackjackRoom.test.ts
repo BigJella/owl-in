@@ -132,17 +132,15 @@ describe("playing", () => {
 
   it("auto-stands when the time bank runs out", async () => {
     const r = room({ table: rigged("10 9 6 7") }); // 16 vs 9: the human would usually hit
-    const { player } = human();
+    const { player, messages } = human();
     r.join(player);
-    r.bet(player, 0, 10);
-    r.clearBet(player, 0);
-    r.bet(player, 0, 10);
-    // Bots in 1 and 2 also play; give everything time.
+    for (const spot of [0, 1, 2]) r.bet(player, spot, 10);
+    r.clearBet(player, 1);
+    r.clearBet(player, 2);
     r.setReady(player);
     await vi.advanceTimersByTimeAsync(r.timing.gapMs + 20_000 + 10_000);
-    const hand = r.table.spots[0]!.hands[0];
-    expect(hand?.cards).toHaveLength(2);
-    expect(hand?.status).toBe("stood");
+    const acted = messages.flatMap((m) => m.events).filter((e) => e.type === "playerActed" && e.spot === 0);
+    expect(acted).toEqual([{ type: "playerActed", spot: 0, hand: 0, action: "stand", amount: 0 }]);
     r.close();
   });
 
@@ -163,6 +161,102 @@ describe("playing", () => {
   });
 });
 
+describe("betting on the time bank", () => {
+  /** Play one round on spot 4 (standing), then return once the next betting window is open. */
+  async function playOneRound(r: BlackjackRoom, player: HumanPlayer) {
+    r.bet(player, 4, 10);
+    r.setReady(player);
+    for (let i = 0; i < 20 && r.stage() === "betting"; i += 1) await vi.advanceTimersByTimeAsync(250);
+    for (let i = 0; i < 200 && r.stage() !== "betting"; i += 1) {
+      if (r.viewFor(player.id).myLegal) r.submitAction(player, "stand");
+      await vi.advanceTimersByTimeAsync(250);
+    }
+    expect(r.stage()).toBe("betting");
+  }
+
+  it("keeps bets open past the window while last round's players spend their bank", async () => {
+    const r = room();
+    const { player } = human();
+    r.join(player);
+    await playOneRound(r, player);
+    const bank = r.viewFor(player.id).myTimeBankMs;
+    expect(bank).toBeGreaterThan(5_000); // +20s for the hand, minus what we used
+    expect(r.viewFor(player.id).myBettingClock).toBe("window");
+
+    await vi.advanceTimersByTimeAsync(r.viewFor(player.id).phaseRemainingMs! + 2_000);
+    const view = r.viewFor(player.id);
+    expect(r.stage()).toBe("betting"); // window over, still open
+    expect(view.myBettingClock).toBe("bank");
+    expect(view.waitingFor).toEqual([player.name]);
+    expect(view.phaseRemainingMs).toBeNull();
+    expect(view.myTimeBankMs).toBeLessThanOrEqual(bank - 1_900);
+
+    r.bet(player, 4, 10);
+    expect(r.setReady(player)).toBeNull(); // Deal stops the drain and closes bets
+    const kept = r.viewFor(player.id).myTimeBankMs;
+    await vi.advanceTimersByTimeAsync(r.timing.gapMs + 5);
+    expect(r.stage()).not.toBe("betting");
+    expect(r.viewFor(player.id).myTimeBankMs).toBe(kept);
+    r.close();
+  });
+
+  it("closes once the bank runs dry (and the spot is given up if there's no bet)", async () => {
+    const r = room();
+    const { player } = human();
+    r.join(player);
+    await playOneRound(r, player);
+    const window = r.viewFor(player.id).phaseRemainingMs!;
+    const bank = r.viewFor(player.id).myTimeBankMs;
+    await vi.advanceTimersByTimeAsync(window + bank + 50);
+    expect(r.stage()).not.toBe("betting");
+    expect(r.viewFor(player.id).myTimeBankMs).toBe(0);
+    expect(r.ownedSpots(player)).toEqual([]);
+    r.close();
+  });
+
+  it("doesn't hold bets for someone who didn't play last round", async () => {
+    const r = room();
+    const a = human();
+    r.join(a.player);
+    await playOneRound(r, a.player);
+    const b = human(); // joins now: no bank-funded betting for them
+    r.join(b.player);
+    r.bet(b.player, 6, 10);
+    r.bet(a.player, 4, 10);
+    expect(r.setReady(a.player)).toBeNull(); // a done; b holds spot 6 but isn't ready
+    await vi.advanceTimersByTimeAsync(r.viewFor(b.player.id).phaseRemainingMs! + 5);
+    expect(r.viewFor(b.player.id).myBettingClock).toBeNull();
+    expect(r.stage()).not.toBe("betting");
+    r.close();
+  });
+});
+
+describe("payouts and the shoe", () => {
+  it("pays a blackjack 3:2", async () => {
+    const r = room({ table: rigged("A 9 K 7") });
+    const { player } = human();
+    r.join(player);
+    for (const spot of [0, 1, 2]) r.bet(player, spot, 100);
+    r.clearBet(player, 1);
+    r.clearBet(player, 2);
+    r.setReady(player);
+    const afterBet = player.bankroll;
+    await vi.advanceTimersByTimeAsync(r.timing.gapMs + 5);
+    expect(r.table.spots[0]!.hands[0]!.result).toBe("blackjack");
+    expect(player.bankroll - afterBet).toBe(250); // stake back + 150
+    r.close();
+  });
+
+  it("only reveals the shoe to the nearest quarter deck", () => {
+    const r = room();
+    const { shoe } = r.viewFor(null);
+    const quarters = (shoe.level * shoe.decks * 52) / 13;
+    expect(Math.abs(quarters - Math.round(quarters))).toBeLessThan(1e-9);
+    expect(shoe).not.toHaveProperty("cardsRemaining");
+    r.close();
+  });
+});
+
 describe("money", () => {
   it("is conserved over a long session (bankrolls + house + table)", async () => {
     const bank = new HouseBank();
@@ -172,18 +266,14 @@ describe("money", () => {
     const total = () => bank.balance + r.onTable() + players.reduce((s, { player }) => s + player.bankroll, 0);
     const start = total();
     let rounds = 0;
-    const seenShuffle = { value: false };
-    for (const { messages } of players) void messages;
 
     for (let tick = 0; tick < 3_000 && rounds < 150; tick += 1) {
       const stage = r.stage();
       if (stage === "betting") {
         players.forEach(({ player }, i) => {
-          if (r.ownedSpots(player).length === 0 || r.viewFor(player.id).amReady === false) {
-            const spot = 3 + i * 2;
-            if (r.table.spots[spot]!.bet === 0) r.bet(player, spot, 10 + 10 * (tick % 5));
-            r.setReady(player);
-          }
+          const spot = 3 + i * 2;
+          if (r.table.spots[spot]!.bet === 0) r.bet(player, spot, 10 + 10 * (tick % 5));
+          r.setReady(player);
         });
       }
       if (stage === "insurance") for (const { player } of players) r.insurance(player, tick % 2 === 0);
@@ -195,7 +285,6 @@ describe("money", () => {
         }
       }
       if (r.table.roundId > rounds) rounds = r.table.roundId;
-      if (r.table.shoe.discarded <= 1 && rounds > 1) seenShuffle.value = true;
       expect(total()).toBe(start);
       await vi.advanceTimersByTimeAsync(500);
     }

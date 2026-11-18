@@ -24,12 +24,25 @@ export type Clock =
  * Between your turns it shows your banked time plus a greyed "+Ns next turn" refill preview.
  * `timeoutNote` says what happens at 0 (poker: check/fold, blackjack: stand).
  */
-export function ClockBlock({ clock, timeoutNote = "Auto check / fold at 0" }: { clock: Clock; timeoutNote?: string }) {
+export function ClockBlock({
+  clock,
+  timeoutNote = "Auto check / fold at 0",
+  graceLabel = "Ready up",
+  drainLabel = "Not ready · bank draining",
+  drainNote = "Ready up to stop the drain",
+}: {
+  clock: Clock;
+  timeoutNote?: string;
+  /** Wording for the ready-up / betting window and the time-bank drain after it. */
+  graceLabel?: string;
+  drainLabel?: string;
+  drainNote?: string;
+}) {
   const label = {
     rebuy: "Meal plan empty",
     turn: "Your turn",
-    grace: "Ready up",
-    draining: "Not ready · bank draining",
+    grace: graceLabel,
+    draining: drainLabel,
     bank: "Time bank",
   }[clock.kind];
   const urgent = clock.kind === "rebuy" || clock.kind === "draining" || (clock.kind === "turn" && clock.seconds <= 5);
@@ -43,7 +56,7 @@ export function ClockBlock({ clock, timeoutNote = "Auto check / fold at 0" }: { 
     rebuy: "Reload or cash out",
     turn: timeoutNote,
     grace: `Then your bank (${clock.kind === "grace" ? clock.bank : 0}s) drains`,
-    draining: "Ready up to stop the drain",
+    draining: drainNote,
     bank: timeoutNote,
   }[clock.kind];
   return (

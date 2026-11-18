@@ -118,12 +118,12 @@ export class BlackjackRenderer {
   private readonly nodes: SpotNode[] = [];
 
   private view: BlackjackTableView | null = null;
-  private model: { spots: LocalSpot[]; dealer: (PlayingCard | null)[]; remaining: number; discarded: number; size: number } = {
+  /** level / tray: shoe and discard-tray fill (fractions of the shoe, quarter-deck precision from the server). */
+  private model: { spots: LocalSpot[]; dealer: (PlayingCard | null)[]; level: number; tray: number } = {
     spots: Array.from({ length: BJ_SPOTS }, () => ({ bet: 0, hands: [] })),
     dealer: [],
-    remaining: 312,
-    discarded: 0,
-    size: 312,
+    level: 1,
+    tray: 0,
   };
   private queue: ReceivedBlackjack[] = [];
   private current: gsap.core.Timeline | null = null;
@@ -240,7 +240,6 @@ export class BlackjackRenderer {
             const to = this.dealerCardPos(index, dealerCount);
             this.fly(tl, SHOE_MOUTH, to, card, DEALER_W, DEALER_H, () => {
               this.model.dealer.push(card);
-              this.model.remaining -= 1;
               this.renderDealer();
               this.drawShoe();
             });
@@ -253,7 +252,6 @@ export class BlackjackRenderer {
               const local = this.model.spots[spot]!;
               while (local.hands.length <= hand) local.hands.push({ cards: [], doubled: false, result: null, total: null });
               if (card) local.hands[hand]!.cards.push(card);
-              this.model.remaining -= 1;
               this.renderSpot(spot);
               this.drawShoe();
             });
@@ -330,7 +328,10 @@ export class BlackjackRenderer {
           else if (e.payout > e.bet) this.chipFly(tl, DEALER_CHIP, node.geom.box, 0.3);
           if (e.payout > 0) {
             this.chipFly(tl, node.geom.box, node.geom.plate, 0.25);
-            tl.call(() => this.setNote(e.spot, e.payout > e.bet ? `+${fmt(e.payout - e.bet)}` : e.result === "push" ? "Push" : `${fmt(e.payout)} back`));
+            const won = e.payout - e.bet;
+            const note =
+              e.result === "blackjack" ? `Blackjack +${fmt(won)}` : won > 0 ? `+${fmt(won)}` : e.result === "push" ? "Push" : `${fmt(e.payout)} back`;
+            tl.call(() => this.setNote(e.spot, note));
           } else {
             tl.call(() => this.setNote(e.spot, `-${fmt(e.bet)}`));
           }
@@ -380,7 +381,6 @@ export class BlackjackRenderer {
           tl.call(() => {
             this.model.spots.forEach((s) => (s.hands = []));
             this.model.dealer = [];
-            this.model.discarded += e.cards;
             this.notes.fill("");
             this.renderAll(view);
             this.drawShoe();
@@ -400,8 +400,8 @@ export class BlackjackRenderer {
           tl.to(backs, { x: SHOE.x, y: SHOE.y, duration: 0.5, stagger: 0.06, ease: "power2.inOut" });
           tl.call(() => {
             backs.forEach((b) => b.destroy());
-            this.model.remaining = this.model.size - 1;
-            this.model.discarded = 1;
+            this.model.level = 1;
+            this.model.tray = 0;
             this.drawShoe();
           });
           tl.to({}, { duration: 0.4 });
@@ -461,9 +461,8 @@ export class BlackjackRenderer {
       hands: s ? s.hands.map((h) => ({ cards: [...h.cards], doubled: h.doubled, result: h.result, total: h.total })) : [],
     }));
     this.model.dealer = [...view.dealer.cards];
-    this.model.remaining = view.shoe.cardsRemaining;
-    this.model.discarded = view.shoe.discarded;
-    this.model.size = view.shoe.size;
+    this.model.level = view.shoe.level;
+    this.model.tray = view.shoe.tray;
     this.renderAll(view);
     this.drawShoe();
     this.showMessage(
@@ -610,7 +609,7 @@ export class BlackjackRenderer {
 
   /** Shoe (right) and discard tray (left): flat stacks whose height tracks the card counts. */
   private drawShoe() {
-    const { remaining, discarded, size } = this.model;
+    const { level, tray } = this.model;
     const stack = (g: Graphics, box: typeof SHOE, fraction: number, edge: number) => {
       const inner = box.h - 8;
       const h = Math.round(inner * Math.max(0, Math.min(1, fraction)));
@@ -626,8 +625,8 @@ export class BlackjackRenderer {
         }
       }
     };
-    stack(this.shoeGfx, SHOE, remaining / size, GOLD_DIM);
-    stack(this.trayGfx, TRAY, discarded / size, LINE);
+    stack(this.shoeGfx, SHOE, level, GOLD_DIM);
+    stack(this.trayGfx, TRAY, tray, LINE);
   }
 
   private tick = () => {
@@ -655,7 +654,7 @@ export class BlackjackRenderer {
       }
       const status = !s.connected ? "AWAY" : s.leaving ? "LAST ROUND" : s.ready === true ? "✓ READY" : "";
       node.note.text = this.notes[spot] || status;
-      node.note.style.fill = !s.connected || s.leaving ? DANGER : this.notes[spot]?.startsWith("+") || s.ready ? GOLD : TEXT;
+      node.note.style.fill = !s.connected || s.leaving ? DANGER : /^(\+|Blackjack)/.test(this.notes[spot] ?? "") || s.ready ? GOLD : TEXT;
     });
   };
 

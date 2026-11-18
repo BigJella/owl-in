@@ -94,12 +94,23 @@ export interface BlackjackTableView {
   phaseRemainingMs: number | null;
   /** Bot-only tables: ms until the next round. */
   nextRoundInMs: number | null;
-  /** What's left in the shoe and what's in the discard tray (cards). */
-  shoe: { decks: number; size: number; cardsRemaining: number; discarded: number };
+  /**
+   * How full the shoe and the discard tray are, as fractions of the whole shoe, rounded to the nearest
+   * quarter deck (players estimate decks left from these, like reading a real discard tray).
+   */
+  shoe: { decks: number; level: number; tray: number };
   // ---- personal ----
   mySpots: number[];
   myBankroll: number;
+  /** Live: drains while you hold up betting on your bank. */
   myTimeBankMs: number;
+  /**
+   * You had a bet last round and haven't pressed Deal: "window" while the betting window runs,
+   * then "bank" while bets stay open on your time bank. null otherwise.
+   */
+  myBettingClock: "window" | "bank" | null;
+  /** Betting window over: players whose time banks are keeping bets open. */
+  waitingFor: string[];
   /** Your legal actions when one of your hands is up (double/split only if you can afford them). */
   myLegal: BlackjackLegal | null;
   /** Insurance decision for your hands: total cost to insure them all. */

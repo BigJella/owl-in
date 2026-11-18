@@ -226,12 +226,16 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
   **late surrender** (first decision only, not after a split). 21 auto-stands.
 - **Card counting is secretly supposed to work.** The shoe persists across rounds and is only reshuffled between rounds after the
   cut card (70–80% penetration); one card is burned after each shuffle; every card (including the hole card at the end) is shown
-  face up; the canvas shows the shoe and discard-tray levels and the strip shows decks left (to ½ deck). Limits are min to
+  face up; the canvas shows the shoe and discard-tray levels. The server only sends those levels **to the nearest quarter
+  deck** (never exact card counts), and the strip only says **Fresh / Early / Middle / Late**: the user found an exact
+  "decks left" too easy. Limits are min to
   **50× min**, with no penalty for spreading. **Never show the count, and don't add continuous shuffling or a bet-spread penalty.**
   No hint copy (the user didn't want one).
 - Bets come straight from the bankroll (no buy-in). The HouseBank is the dealer: stakes go to the house at settlement and it pays
   payouts. Bot stakes come from and return to the house. `BlackjackRoom.onTable()` + bankrolls + house is conserved.
-- Rounds: a **15s betting window** (closes early once every connected human holding a spot has pressed Deal), the deal,
+- Rounds: a **15s betting window** (closes early once every connected human holding a spot has pressed Deal). Players who had
+  a bet **last round** and still hold a spot can keep betting past the window **on their time bank** (it drains, like poker's
+  ready-up; Deal stops it; at 0 bets close). New players get only the window. Then the deal,
   an 8s insurance window when the dealer shows an ace, then turns. Human turns use the same time bank as poker
   (+20s per hand, cap 120s, **auto-stand** at 0). Bots think 0.8–1.6s. Results stay up 3s (after their animation),
   then cards are swept to the tray. Bot-only tables deal one round per 20s.
@@ -263,7 +267,7 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
 - [x] Shared fixed-grid table strip (identical for all players, no shifting); sidebar with static info top / controls bottom;
       time bank + "+20s next turn" preview between turns
 - [x] Git repo on `main` (history: initial commit → UI rework → UI improvements → sidebar → table/sidebar polish)
-- [x] Tests: 64 Vitest tests (poker + blackjack engines, rooms with fake timers incl. soaks); `scripts/bots.mjs` and
+- [x] Tests: 69 Vitest tests (poker + blackjack engines, rooms with fake timers incl. soaks); `scripts/bots.mjs` and
       `scripts/blackjack-bots.mjs` e2e
 - [x] Blackjack: engine (shoe, S17, 3:2, double/split/insurance/late surrender), BlackjackRoom (spots, bot fill 1–3,
       betting window, insurance, time bank), lobby + table page + Pixi renderer (shoe/tray levels, deal/flip/payout/sweep/shuffle
@@ -303,6 +307,7 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
 - [ ] Add a leaderboard (bankroll ranking), needs persistence first
 - [ ] Consider a short "Folded · $10 in pot" style label so dead money on folded seats isn't confusing
 - [ ] Blackjack: the canvas is small at phone width (sidebar controls are the primary UI there); consider a phone-specific layout
+- [ ] Blackjack: 3:2 is verified by tests. If it looks wrong in play, check for insured blackjacks (even money) or 21 after a split (pays 1:1)
 - [ ] Blackjack: insurance and split flows are covered by engine/room tests but were not screenshot-checked in a browser
 
 ---

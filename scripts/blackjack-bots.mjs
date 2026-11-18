@@ -31,7 +31,6 @@ let firstRound = null;
 let lastRound = 0;
 let tookBotSpot = false;
 const bettingSeen = new Map();
-const revealed = new Map();
 
 clients.forEach((socket, index) => {
   socket.on("blackjack:state", ({ view, events }) => {
@@ -41,13 +40,12 @@ clients.forEach((socket, index) => {
     });
     if (view.mySpots.length > 3) fail(`client ${index} holds ${view.mySpots.length} spots`);
     // The hole card is dealt face down and stays hidden until the dealer turns it over.
-    for (const e of events) {
-      if (e.type === "roundStarted") revealed.set(index, false);
-      if (e.type === "holeRevealed") revealed.set(index, true);
-    }
     const dealtToDealer = events.filter((e) => e.type === "cardDealt" && e.target === "dealer");
     if (events.some((e) => e.type === "roundStarted") && dealtToDealer[1]?.card) fail("hole card dealt face up");
-    if (view.dealer.cards.length >= 2 && view.dealer.cards[1] !== null && !revealed.get(index)) fail("hole card visible before reveal");
+    // While anyone can still act, the hole card must be hidden (the dealer only plays once everyone is done).
+    if ((view.stage === "insurance" || view.stage === "playing") && view.dealer.cards.length >= 2 && view.dealer.cards[1] !== null) {
+      fail("hole card visible before the dealer's turn");
+    }
     if (firstRound === null && view.roundId > 0) firstRound = view.roundId;
     lastRound = Math.max(lastRound, view.roundId);
 
