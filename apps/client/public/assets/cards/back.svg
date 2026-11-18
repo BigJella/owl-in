@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="140" height="200" viewBox="0 0 140 200">
+  <defs>
+    <pattern id="p" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="14" height="14" fill="#5b2a86"/><rect width="7" height="14" fill="#6d36a0"/>
+    </pattern>
+  </defs>
+  <rect x="1" y="1" width="138" height="198" rx="12" fill="#fdfbf4" stroke="#cfc8b3" stroke-width="2"/>
+  <rect x="10" y="10" width="120" height="180" rx="8" fill="url(#p)"/>
+  <circle cx="70" cy="100" r="26" fill="#e5b85b"/>
+  <text x="70" y="111" font-family='Georgia, serif' font-size="32" font-weight="700" text-anchor="middle" fill="#2a1840">O</text>
+</svg>

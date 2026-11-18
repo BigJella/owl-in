@@ -1,0 +1,25 @@
+{
+  "name": "owl-in",
+  "version": "1.0.0",
+  "description": "its gamba time",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,client -c magenta,cyan \"npm run dev -w apps/server\" \"npm run dev -w apps/client\"",
+    "dev:client": "npm run dev -w apps/client",
+    "dev:server": "npm run dev -w apps/server",
+    "build": "npm run build -w apps/client",
+    "start": "npm run start -w apps/server",
+    "typecheck": "npm run typecheck --workspaces",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.7",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "@owl-in/game-engine",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "pokersolver": "^2.1.4"
+  }
+}

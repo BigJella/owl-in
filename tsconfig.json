@@ -1,0 +1,6 @@
+{
+  // Editor/root config only. Each workspace has its own tsconfig.json;
+  // run `npm run typecheck` to check them all.
+  "extends": "./tsconfig.base.json",
+  "files": []
+}

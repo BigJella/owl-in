@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // tsx runs the server, so bundler-style resolution lets it import
+    // workspace packages straight from their .ts source.
+    "types": ["node"]
+  },
+  "include": ["src"]
+}
