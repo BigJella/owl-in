@@ -112,7 +112,8 @@ apps/
     src/networking/gameStore.ts   createGameStore(): buffers a game's state messages outside React (animations never drop events)
     src/networking/pokerStore.ts, blackjackStore.ts  The two stores built from it
     src/components/ClockBlock.tsx  ClockBlock + useNow, shared by both table pages
-    src/pages/                NamePage, HomePage, PokerLobbyPage (sortable/filterable room list, buy-in/create dialogs),
+    src/pages/                NamePage (name + Public/Private career), HomePage, PokerLobbyPage (sortable/filterable room list, buy-in/create dialogs),
+                              CareerPage (stats panels, table history with expandable hands), LeaderboardPage,
                               BlackjackLobbyPage, BlackjackTablePage (strip; sidebar BetPanel / insurance / PlayPanel),
                               PokerTablePage (shared TableStrip; sidebar = static info top + controls bottom;
                               ClockBlock, ReadyPanel, RebuyDialog, LeaveDialog, cashed-out result view)
@@ -134,6 +135,8 @@ apps/
                               BlackjackStrategy interface, BasicStrategy (6-deck S17 DAS LS chart)
     src/rooms/PokerRoom.ts    The table loop: turns, time banks, ready-up, bot seating/pacing, cash-outs, penalties, views
     src/rooms/RoomManager.ts  Create/list rooms, keeps ≥2 open, batches room-list pushes
+    src/stats/                StatsStore interface + MemoryStatsStore (career totals, sessions, hand records),
+                              pokerAttribution (net vs players / vs bots per hand), careerView (privacy, leaderboard)
     src/rooms/BlackjackRoom.ts  Blackjack loop: betting window, spot claims, bot fill (spots 1–3), insurance, turns, money
     src/rooms/BlackjackRoomManager.ts  Same as RoomManager for blackjack (seeds "Owl's Nest" $10 and "High Limit" $100)
     src/economy/HouseBank.ts  Source/sink for bot chips (keeps total chips constant)
@@ -148,6 +151,7 @@ packages/
   shared/                     Types + constants used by client and server
     src/poker.ts              Views (PokerTableView, PokerSeatView, PokerRoomSummary), constants, formatDD, describeAction, STAGE_LABEL
     src/blackjack.ts          BlackjackTableView/SpotView/RoomSummary, BJ_* constants and labels
+    src/career.ts             PokerStats, BlackjackStats, TableSession, hand records, CareerView, LeaderboardRow
     src/events.ts             ClientToServerEvents / ServerToClientEvents (Socket.IO generics on both ends)
 scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generate-placeholder-cards.mjs
 ```
@@ -251,6 +255,34 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
   after 60s away they're removed at the next betting round.
 - One table at a time across both games (`HumanPlayer.game` + `roomId`; `Session.game` tells the client which page to show).
 
+**Career & leaderboard (agreed with the user, keep these)**
+- **Stored in memory only** (`MemoryStatsStore`), like bankrolls: a restart wipes both. Rooms report to the `StatsStore`
+  interface, so a SQLite implementation can replace it in one place. Hand records are capped at 5,000 per player;
+  totals never are.
+- Recorded per player: **table sessions** (game, table, stakes, joined/left, poker buy-in incl. rebuys → cash-out,
+  hands, wagered, net, end reason: left / busted / removed / table closed) and **every hand**: poker (hole cards, board,
+  position, last action, showdown hand, pot, wagered, net, result, net vs players / vs bots) and blackjack rounds (each
+  spot's hands, cards, bet, doubled/split, result, payout, insurance, dealer cards).
+- **Rates:** poker = won / split pot / lost / folded (+ showdowns won). Blackjack (per hand) = won / push / lost, plus
+  blackjack, bust, double and surrender % (per hand) and split and insurance % (per round). Blackjack money is vs the house.
+- **Vs players / vs bots (poker):** each hand's losses are spread over its winners in proportion to their profit
+  (`pokerAttribution.ts`); the two always add up to the hand's net.
+- **Leaderboard ranks by Dining Dollars only** (bankroll + chips at a poker table). Everyone who picked a name this
+  server run is listed.
+- **Privacy:** chosen on the name page (Public / Private, saved in localStorage `owl-in:career-public`). Changeable on
+  your own career page. Private careers still appear on the leaderboard (name + money) but can't be opened. On someone
+  else's career, poker hole cards are hidden unless they were shown at a showdown.
+
+**Identity (agreed with the user, keep these)**
+- Identity belongs to the **browser token** (localStorage `owl-in:token`, 32 hex chars; a malformed one is replaced).
+- **Verified with the server on every load / reconnect.** On connect the server attaches a known token's socket (so a
+  refresh keeps a seat) but **never sends `session`** until `identify` passes; the client also ignores `session` pushes
+  until then. `identify({ name, careerPublic })` checks, in order: token (`code: "token"` → client makes a new token and
+  reconnects), name (`code: "name"`: invalid or taken → editable name page with the error), privacy (`code: "careerPublic"`:
+  missing/garbage → name shown **locked and greyed**, only Public / Private asked, nothing preselected).
+- **Names are unique per server run**, case-insensitive: a name belongs to the first token that claims it, even while
+  that player is offline (`PlayerRegistry.nameTaken`). Renaming frees your old name. A restart clears all names.
+
 ---
 
 ## Implementation checklist
@@ -273,7 +305,7 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
 - [x] Shared fixed-grid table strip (identical for all players, no shifting); sidebar with static info top / controls bottom;
       time bank + "+20s next turn" preview between turns
 - [x] Git repo on `main` (history: initial commit → UI rework → UI improvements → sidebar → table/sidebar polish)
-- [x] Tests: 71 Vitest tests (poker + blackjack engines, rooms with fake timers incl. soaks); `scripts/bots.mjs` and
+- [x] Tests: 86 Vitest tests (poker + blackjack engines, rooms with fake timers incl. soaks); `scripts/bots.mjs` and
       `scripts/blackjack-bots.mjs` e2e
 - [x] Blackjack: engine (shoe, S17, 3:2, double/split/insurance/late surrender), BlackjackRoom (spots, bot fill 1–3,
       betting window, insurance, time bank), lobby + table page + Pixi renderer (shoe/tray levels, deal/flip/payout/sweep/shuffle
@@ -282,7 +314,9 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
 **Not done / known gaps**
 - [ ] Real card and chip art (placeholders are SVGs; swap the files and keep the names, change `CARD_EXT` for PNGs)
 - [ ] LLM bots (wire `CompleteFn` in `LlmStrategy` to the Claude API and pick which bots use it)
-- [ ] Persistence (bankrolls, penalties and rooms are in memory; a server restart wipes them)
+- [x] Career page (rates, totals, vs players/bots, table history with every hand) and leaderboard (by Dining Dollars),
+      public/private careers
+- [ ] Persistence (bankrolls, penalties, rooms and career stats are in memory; a server restart wipes them)
 - [ ] `npm audit` reports high-severity advisories (not investigated)
 - [ ] Admin dashboard (deliberately skipped so far)
 
@@ -297,8 +331,8 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
    - Give bots personalities (tight/loose/aggressive) through prompts. Mix LLM and rule-based bots per table.
    - Optional: show a bot's one-line "reasoning" or table talk after its action (only public info, never hole cards).
    - Respect the time budget: the room aborts slow decisions and falls back automatically.
-3. **Persistence & identity.** SQLite (e.g. Drizzle) for bankrolls, penalties and hand history. Maybe a leaderboard
-   (the nav already has a placeholder link).
+3. **Persistence & identity.** SQLite (e.g. Drizzle) for bankrolls, penalties and career stats / hand history
+   (implement `StatsStore`). The career page and leaderboard already exist, in memory.
 4. **Content & polish.** Real card art, sounds, chat/emotes, hand history panel, spectator mode.
 5. **Blackjack: done.** Possible follow-ups: LLM blackjack bots (`BlackjackStrategy`), a card-counting bot that spreads its bets.
 6. **Ops.** Admin dashboard (rooms, players, house bank), production build served by Express, deploy notes.
@@ -310,7 +344,9 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
 - [ ] Wire `LlmStrategy` to the Claude API behind an env var (e.g. `ANTHROPIC_API_KEY`). Keep `RuleBasedStrategy` as the fallback
 - [ ] Decide how many bots per table are LLM-driven, and show which ones in the UI (e.g. a different badge)
 - [ ] Replace placeholder card SVGs with real art
-- [ ] Add a leaderboard (bankroll ranking), needs persistence first
+- [ ] Implement `StatsStore` (and bankroll storage) on SQLite so careers survive restarts
+- [ ] Names are reserved for the whole server run: someone who loses their browser data can't reclaim their name until
+      a restart. Consider a recovery code if that becomes a problem
 - [ ] Consider a short "Folded · $10 in pot" style label so dead money on folded seats isn't confusing
 - [ ] Blackjack: the canvas is small at phone width (sidebar controls are the primary UI there); consider a phone-specific layout
 - [ ] Blackjack: 3:2 is verified by tests. If it looks wrong in play, check for insured blackjacks (even money) or 21 after a split (pays 1:1)

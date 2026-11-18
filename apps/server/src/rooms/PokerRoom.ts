@@ -12,6 +12,7 @@ import {
   TIME_BANK_MAX_MS,
   TIME_BANK_REFILL_MS,
   type PokerRoomSummary,
+  type SessionEndReason,
   type PokerSeatView,
   type PokerTableView,
   type TableStage,
@@ -21,6 +22,8 @@ import type { HouseBank } from "../economy/HouseBank";
 import { BotPlayer, pickBotName } from "../players/BotPlayer";
 import { HumanPlayer } from "../players/HumanPlayer";
 import type { Player } from "../players/Player";
+import { attributePokerHand } from "../stats/pokerAttribution";
+import type { StatsStore } from "../stats/StatsStore";
 
 export interface RoomTiming {
   /** Short pause before dealing once everyone is ready (also the minimum gap in bot-only rooms). */
@@ -80,6 +83,8 @@ export interface PokerRoomOptions {
   bigBlind: number;
   bank: HouseBank;
   timing?: Partial<RoomTiming>;
+  /** Career stats: sessions and finished hands are reported here. */
+  stats?: StatsStore;
   /** Summary-level change (seats, chips). */
   onChange?: (room: PokerRoom) => void;
   /** Asked when the room has no humans at a hand boundary. */
@@ -137,6 +142,10 @@ export class PokerRoom {
   /** playerId -> time they may rejoin this table. */
   private readonly penalties = new Map<string, number>();
   private readonly bank: HouseBank;
+  /** playerId -> open career session at this table. */
+  private readonly sessionIds = new Map<string, string>();
+  /** Every event of the hand in progress (for the career record when it ends). */
+  private handLog: PokerEvent[] = [];
 
   constructor(private readonly options: PokerRoomOptions) {
     this.id = options.id;
@@ -194,6 +203,7 @@ export class PokerRoom {
     player.roomId = this.id;
     player.game = "poker";
     this.waiting.push({ player, buyIn });
+    this.openSession(player, buyIn);
 
     this.hurryNextHand();
     this.broadcast([]);
@@ -219,6 +229,7 @@ export class PokerRoom {
     if (queued >= 0) {
       // Never sat down: just a refund, no penalty.
       player.bankroll += this.waiting[queued]!.buyIn;
+      this.closeSession(player, this.waiting[queued]!.buyIn, "left");
       this.waiting.splice(queued, 1);
     }
     if (seat !== null) {
@@ -259,6 +270,8 @@ export class PokerRoom {
     if (!Number.isInteger(amount) || amount < min || amount > max) return `Buy-in must be between ${formatDD(min)} and ${formatDD(max)}.`;
     player.bankroll -= amount;
     this.table.addChips(seat, amount);
+    const sessionId = this.sessionIds.get(player.id);
+    if (sessionId) this.options.stats?.addBuyIn(sessionId, amount);
     occ.rebuyDeadline = null;
     occ.ready = true;
     occ.drainSince = null;
@@ -449,6 +462,9 @@ export class PokerRoom {
 
   private afterEvents(events: PokerEvent[]) {
     this.trackActions(events);
+    if (events.some((e) => e.type === "handStarted")) this.handLog = [];
+    this.handLog.push(...events);
+    if (events.some((e) => e.type === "handEnded")) this.recordHand(this.handLog);
     if (this.table.phase === "idle") {
       const animationMs = animationAllowanceMs(events);
       if (this.occupants.some((o) => o?.cashingOut)) {
@@ -571,7 +587,7 @@ export class PokerRoom {
         // Kicked (away too long / didn't rebuy in time) or busted: same rejoin penalty as cashing out,
         // so you can't bust or leave and immediately sit back down with a different stack.
         this.penalize(occ.player);
-        this.removeOccupant(seat);
+        this.removeOccupant(seat, stack === 0 ? "busted" : "removed");
       }
       else if (occ.player.kind === "bot" && stack < this.bigBlind) {
         this.table.addChips(seat, this.bank.withdraw(botStack - stack));
@@ -618,13 +634,14 @@ export class PokerRoom {
     }
   }
 
-  private removeOccupant(seat: number) {
+  private removeOccupant(seat: number, reason: SessionEndReason = "left") {
     const occ = this.occupants[seat];
     if (!occ) return;
     const stack = this.table.removePlayer(seat);
     this.occupants[seat] = null;
     if (occ.dropTimer) clearTimeout(occ.dropTimer);
     if (occ.player instanceof HumanPlayer) {
+      this.closeSession(occ.player, stack, reason);
       occ.player.bankroll += stack;
       if (occ.player.roomId === this.id) {
         occ.player.roomId = null;
@@ -642,14 +659,91 @@ export class PokerRoom {
     if (this.turn) for (const timer of this.turn.timers) clearTimeout(timer);
     this.turn = null;
     this.closed = true;
-    if (this.table.phase === "idle") this.occupants.forEach((_, seat) => this.removeOccupant(seat));
+    if (this.table.phase === "idle") this.occupants.forEach((_, seat) => this.removeOccupant(seat, "table closed"));
     for (const { player, buyIn } of this.waiting) {
+      this.closeSession(player, buyIn, "table closed");
       player.bankroll += buyIn;
       player.roomId = null;
       player.sendSession();
     }
     this.waiting = [];
     this.options.onClose?.(this);
+  }
+
+  // ---------- career stats ----------
+
+  private openSession(player: HumanPlayer, buyIn: number) {
+    const stats = this.options.stats;
+    if (!stats || this.sessionIds.has(player.id)) return;
+    const stakes = `${formatDD(this.table.smallBlind)}/${formatDD(this.bigBlind)}`;
+    this.sessionIds.set(player.id, stats.openSession(player.id, { game: "poker", roomId: this.id, roomName: this.name, stakes, buyIn }));
+  }
+
+  private closeSession(player: HumanPlayer, cashOut: number, reason: SessionEndReason) {
+    const sessionId = this.sessionIds.get(player.id);
+    if (!sessionId) return;
+    this.sessionIds.delete(player.id);
+    this.options.stats?.closeSession(sessionId, { cashOut, reason });
+  }
+
+  /** A hand just ended: record it for every human who was dealt in. */
+  private recordHand(events: PokerEvent[]) {
+    const stats = this.options.stats;
+    const started = events.find((e) => e.type === "handStarted");
+    const dealt = events.find((e) => e.type === "holeCardsDealt");
+    if (!stats || !started || !dealt) return;
+    const seats = dealt.seats.flatMap((seat) => {
+      const occ = this.occupants[seat];
+      const s = this.table.seats[seat];
+      return occ && s ? [{ seat, kind: occ.player.kind, contributed: s.contributed, folded: s.folded }] : [];
+    });
+    const showdown = events.find((e) => e.type === "showdown");
+    const pot = events.reduce((sum, e) => sum + (e.type === "potAwarded" ? e.amount : 0), 0);
+    for (const outcome of attributePokerHand(seats, events)) {
+      const occ = this.occupants[outcome.seat];
+      if (!(occ?.player instanceof HumanPlayer)) continue;
+      const sessionId = this.sessionIds.get(occ.player.id);
+      if (!sessionId) continue;
+      const s = this.table.seats[outcome.seat]!;
+      const reveal = showdown?.reveals.find((r) => r.seat === outcome.seat);
+      const acted = events.filter((e) => e.type === "playerActed" && e.seat === outcome.seat).at(-1);
+      stats.recordPokerHand(
+        occ.player.id,
+        {
+          game: "poker",
+          sessionId,
+          handId: started.handId,
+          at: Date.now(),
+          holeCards: [...s.holeCards],
+          board: [...this.table.community],
+          position:
+            started.button === outcome.seat
+              ? "D"
+              : started.smallBlindSeat === outcome.seat
+                ? "SB"
+                : started.bigBlindSeat === outcome.seat
+                  ? "BB"
+                  : null,
+          lastAction: acted?.type === "playerActed" ? describeAction(acted) : null,
+          showdownHand: reveal?.handName ?? null,
+          pot,
+          wagered: s.contributed,
+          returned: outcome.returned,
+          net: outcome.net,
+          result: outcome.result,
+          vsPlayers: outcome.vsPlayers,
+          vsBots: outcome.vsBots,
+        },
+        { reached: reveal !== undefined, won: reveal !== undefined && outcome.returned > 0 },
+      );
+    }
+  }
+
+  /** Dining Dollars this player has at this table (stack, or a queued buy-in). */
+  chipsOf(player: HumanPlayer): number {
+    const seat = this.seatOf(player);
+    if (seat !== null) return this.table.seats[seat]!.stack + this.table.seats[seat]!.bet;
+    return this.waiting.find((w) => w.player === player)?.buyIn ?? 0;
   }
 
   // ---------- views ----------

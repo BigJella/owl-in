@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { PokerRoomSummary } from "@owl-in/shared";
 import type { HouseBank } from "../economy/HouseBank";
+import type { StatsStore } from "../stats/StatsStore";
 import type { HumanPlayer } from "../players/HumanPlayer";
 import { PokerRoom, type RoomTiming } from "./PokerRoom";
 
@@ -8,6 +9,8 @@ export const MIN_OPEN_ROOMS = 2;
 
 export interface RoomManagerOptions {
   bank: HouseBank;
+  /** Career stats store shared by every room. */
+  stats?: StatsStore;
   timing?: Partial<RoomTiming>;
   /** Called (batched per tick) whenever the room list changes. */
   onRoomsChanged?: (rooms: PokerRoomSummary[]) => void;
@@ -31,6 +34,7 @@ export class RoomManager {
       name,
       bigBlind,
       bank: this.options.bank,
+      ...(this.options.stats ? { stats: this.options.stats } : {}),
       ...(this.options.timing ? { timing: this.options.timing } : {}),
       onChange: () => this.publish(),
       canClose: () => this.rooms.size > MIN_OPEN_ROOMS,
@@ -54,6 +58,11 @@ export class RoomManager {
 
   list(): PokerRoomSummary[] {
     return [...this.rooms.values()].map((room) => room.summary());
+  }
+
+  /** Dining Dollars the player has at a poker table right now. */
+  chipsOf(player: HumanPlayer): number {
+    return this.roomOf(player)?.chipsOf(player) ?? 0;
   }
 
   humanCount(): number {

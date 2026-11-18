@@ -123,6 +123,7 @@ h1, h2, h3, .display { font-family: var(--display); text-transform: uppercase; f
 .name-card p { margin: 0; }
 .name-card input { height: 50px; border: 1px solid var(--line); background: var(--black); padding: 0 14px; font-size: 17px; margin-top: 8px; }
 .name-card input:focus { border-color: var(--gold); outline: none; }
+.name-card input:disabled { color: var(--muted); background: var(--surface-2); cursor: not-allowed; }
 .name-card .primary { margin-top: 6px; justify-content: space-between; }
 
 /* Home: game cards */
@@ -385,6 +386,121 @@ input[type=range] { accent-color: var(--gold); width: 100%; }
 .bj-hand-note b { margin-left: auto; color: var(--gold); font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .bj-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .bj-actions .bj-surrender { grid-column: 1 / -1; }
+
+/* ---------- Career & leaderboard ---------- */
+.hero-links { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
+.hero-links .secondary { height: 40px; font-size: 13px; }
+
+.privacy-choice { display: flex; flex-direction: column; gap: 6px; }
+.privacy-choice small { color: var(--muted); font-family: var(--display); font-size: 10px; letter-spacing: 2px; text-transform: uppercase; }
+.privacy-choice p { margin: 0; font-size: 13px; }
+.segmented { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--line); width: 100%; max-width: 280px; }
+.segmented button {
+  height: 40px; border: 0; background: var(--black); color: var(--muted);
+  font-family: var(--display); font-size: 13px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase;
+}
+.segmented button + button { border-left: 1px solid var(--line); }
+.segmented button:hover:not(.on) { color: var(--gold); }
+.segmented button.on { background: var(--gold); color: var(--black); }
+
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+.loss { color: var(--danger); }
+
+/* Same list as the lobby pages (.room-list width, row padding, head); only the columns differ. */
+.leader-row { display: grid; grid-template-columns: 64px minmax(0, 1fr) 200px 110px; align-items: center; gap: 12px; padding: 14px 20px; border-top: 1px solid var(--line); }
+.leader-row.room-head { border-top: 0; font-family: var(--display); font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); }
+.leader-row.me { background: var(--surface-2); }
+.leader-rank { font-family: var(--display); font-size: 20px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+.leader-row:nth-child(2) .leader-rank { color: var(--gold); }
+.leader-name { display: flex; align-items: center; gap: 10px; min-width: 0; font-family: var(--display); font-size: 17px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; overflow: hidden; white-space: nowrap; }
+.leader-name .tag { font-style: normal; }
+.leader-money { font-family: var(--display); font-size: 18px; font-weight: 600; color: var(--gold); }
+.leader-row .cell-join .tag { width: 100%; justify-content: center; height: 38px; color: var(--muted); }
+.dot { width: 8px; height: 8px; flex: none; background: #444; }
+.dot.on { background: var(--ok); }
+.online i.off { background: #444; }
+
+.career .hero h1 { overflow-wrap: anywhere; }
+.career-tags { display: flex; align-items: center; gap: 12px; }
+.career-tags .online { margin-top: 0; }
+.career-summary {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); max-width: 1180px; margin-bottom: 20px;
+  border-top: 1px solid var(--gold); border-bottom: 1px solid var(--gold);
+}
+.career-summary > div { display: flex; flex-direction: column; gap: 2px; padding: 12px 18px; border-left: 1px solid var(--line); }
+.career-summary > div:first-child { border-left: 0; padding-left: 4px; }
+.career-summary small, .money-grid small { color: var(--muted); font-family: var(--display); font-size: 10px; letter-spacing: 2px; text-transform: uppercase; }
+.career-summary strong { font-family: var(--display); font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.career-games { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; max-width: 1180px; }
+.career-panel { border: 1px solid var(--line); background: var(--surface); padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.career-panel header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.career-panel h2 { margin: 0; font-size: 22px; }
+.career-panel header .muted { font-family: var(--display); font-size: 12px; letter-spacing: 1px; text-transform: uppercase; }
+.rate-bars { display: flex; flex-direction: column; gap: 8px; }
+.rate-row { display: grid; grid-template-columns: 82px minmax(0, 1fr) 84px; align-items: center; gap: 12px; }
+.rate-label { font-family: var(--display); font-size: 13px; letter-spacing: 1px; text-transform: uppercase; }
+.rate-track { height: 10px; background: var(--black); border: 1px solid var(--line); }
+.rate-track i { display: block; height: 100%; }
+.rate-track i.win { background: var(--gold); }
+.rate-track i.loss { background: var(--danger); }
+.rate-track i.neutral { background: #5a5a5a; }
+.rate-value { text-align: right; font-family: var(--display); font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.rate-value small { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 4px; }
+.career-note { margin: 0; font-size: 14px; }
+.career-note b { font-family: var(--display); color: var(--gold); }
+.mini-rates { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 12px; font-size: 13px; color: var(--muted); }
+.mini-rates b { color: var(--text); font-family: var(--display); font-size: 15px; margin-left: 4px; font-variant-numeric: tabular-nums; }
+/* 1px gaps over a line-coloured background draw the rules, so cells can wrap without broken borders. */
+.money-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: 1px; border: 1px solid var(--line); background: var(--line); }
+.money-grid > div { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; background: var(--black); min-width: 0; }
+.money-grid strong { font-family: var(--display); font-size: 19px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.section-title { font-size: 24px; margin: 32px 0 12px; }
+.table-scroll { overflow-x: auto; max-width: 100%; }
+.history-wrap { max-width: 1180px; border: 1px solid var(--line); background: var(--surface); }
+.history-table, .hand-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.history-table th, .hand-table th {
+  text-align: left; padding: 10px 12px; white-space: nowrap; background: var(--black);
+  color: var(--muted); font-family: var(--display); font-size: 11px; font-weight: 500; letter-spacing: 1.5px; text-transform: uppercase;
+}
+.history-table th { border-bottom: 1px solid var(--gold); }
+.history-table th.num, .hand-table th.num { text-align: right; }
+.history-table td, .hand-table td { padding: 10px 12px; border-top: 1px solid var(--line); white-space: nowrap; font-size: 14px; vertical-align: top; }
+.session-row { cursor: pointer; }
+.session-row:hover, .session-row.open { background: var(--surface-2); }
+.session-row td:first-child { font-family: var(--display); text-transform: uppercase; letter-spacing: 1px; }
+.session-table { font-family: var(--display); font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+.caret { font-style: normal; color: var(--gold); display: inline-block; width: 16px; }
+.session-detail > td { padding: 0 0 0 28px; background: var(--black); }
+.session-detail p { margin: 12px; }
+.hand-table td { font-size: 13px; }
+.hand-table th { background: var(--surface); }
+.text-cards { display: inline-flex; gap: 4px; }
+.text-cards b {
+  display: inline-block; min-width: 30px; padding: 1px 4px; text-align: center;
+  background: var(--text); color: var(--black); font-family: var(--display); font-weight: 600; font-size: 13px;
+}
+.text-cards b.red { color: #c0272d; }
+.result { font-family: var(--display); text-transform: uppercase; letter-spacing: .5px; }
+.result small { display: block; color: var(--muted); text-transform: none; letter-spacing: 0; font-family: "Inter", sans-serif; }
+.result.won, .result.win, .result.blackjack { color: var(--gold); }
+.result.lost, .result.lose { color: var(--danger); }
+.bj-history { display: flex; flex-direction: column; gap: 4px; }
+
+@media (max-width: 760px) {
+  .career-summary { grid-template-columns: 1fr 1fr; }
+  .career-summary > div:nth-child(3) { border-left: 0; padding-left: 4px; }
+  .career-summary > div:nth-child(n + 3) { border-top: 1px solid var(--line); }
+  .career-summary strong { font-size: 22px; }
+  .career-games { grid-template-columns: 1fr; }
+  .mini-rates { grid-template-columns: 1fr 1fr; }
+  .leader-row { grid-template-columns: 28px minmax(0, 1fr) auto 78px; gap: 10px; padding: 10px 12px; }
+  .leader-row .join, .leader-row .cell-join .tag { height: 34px; font-size: 12px; padding: 0 6px; }
+  .leader-row .cell-join { grid-column: auto; }
+  .leader-name { font-size: 15px; gap: 8px; }
+  .leader-money { font-size: 16px; }
+}
 
 /* ---------- Responsive ---------- */
 @media (max-width: 900px) {

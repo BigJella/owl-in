@@ -1,4 +1,4 @@
-import { BlackjackTable, handTotal, type BlackjackAction, type BlackjackEvent, type HandRef } from "@owl-in/game-engine";
+import { BlackjackTable, handTotal, isNatural, type BlackjackAction, type BlackjackEvent, type HandRef } from "@owl-in/game-engine";
 import {
   BJ_BOT_SPOTS,
   BJ_DECKS,
@@ -12,6 +12,8 @@ import {
   BJ_TURN_REFILL_MS,
   formatDD,
   type BlackjackRoomSummary,
+  type BlackjackRoundRecord,
+  type SessionEndReason,
   type BlackjackSpotView,
   type BlackjackStage,
   type BlackjackTableView,
@@ -21,6 +23,7 @@ import type { HouseBank } from "../economy/HouseBank";
 import { BlackjackBot } from "../players/BlackjackBot";
 import { pickBotName } from "../players/BotPlayer";
 import { HumanPlayer } from "../players/HumanPlayer";
+import type { StatsStore } from "../stats/StatsStore";
 
 export interface BlackjackTiming {
   /** How long bets stay open (closes early once everyone holding a spot has pressed Deal). */
@@ -77,6 +80,8 @@ export interface BlackjackRoomOptions {
   timing?: Partial<BlackjackTiming>;
   /** Rig the engine in tests. */
   table?: BlackjackTable;
+  /** Career stats: sessions and settled rounds are reported here. */
+  stats?: StatsStore;
   onChange?: (room: BlackjackRoom) => void;
   canClose?: (room: BlackjackRoom) => boolean;
   onClose?: (room: BlackjackRoom) => void;
@@ -153,6 +158,8 @@ export class BlackjackRoom {
   private lastActor: string | null = null;
   private seq = 0;
   private readonly bank: HouseBank;
+  /** playerId -> open career session at this table. */
+  private readonly sessionIds = new Map<string, string>();
 
   constructor(private readonly options: BlackjackRoomOptions) {
     this.id = options.id;
@@ -179,6 +186,13 @@ export class BlackjackRoom {
     if (existing) {
       this.onReconnect(player);
       return null;
+    }
+    if (this.options.stats) {
+      const stakes = `${formatDD(this.minBet)}–${formatDD(this.maxBet)}`;
+      this.sessionIds.set(
+        player.id,
+        this.options.stats.openSession(player.id, { game: "blackjack", roomId: this.id, roomName: this.name, stakes, buyIn: null }),
+      );
     }
     this.members.set(player.id, {
       player,
@@ -376,7 +390,7 @@ export class BlackjackRoom {
     this.nextRoundAt = null;
     // Long-gone players lose their seat at the table (no penalty; they can come back any time).
     for (const member of [...this.members.values()]) {
-      if (member.disconnectedAt !== null && now - member.disconnectedAt >= this.timing.awayKickMs) this.removeMember(member, true);
+      if (member.disconnectedAt !== null && now - member.disconnectedAt >= this.timing.awayKickMs) this.removeMember(member, true, "removed");
     }
     if (!this.hasHumans()) return this.scheduleRound(events);
     for (const member of this.members.values()) {
@@ -499,6 +513,7 @@ export class BlackjackRoom {
         this.startTurn();
       }, animation);
     } else if (phase === "done") {
+      this.recordRound();
       this.timer = setTimeout(() => this.finishRound(), animation + this.timing.resultMs);
     }
     this.broadcast(events);
@@ -634,6 +649,52 @@ export class BlackjackRoom {
     else this.bank.deposit(amount);
   }
 
+  /** The round just settled: record it for every human who played a spot. */
+  private recordRound() {
+    const stats = this.options.stats;
+    if (!stats) return;
+    const t = this.table;
+    const dealerBlackjack = isNatural(t.dealer);
+    const byPlayer = new Map<HumanPlayer, BlackjackRoundRecord["spots"]>();
+    this.owners.forEach((owner, spot) => {
+      const s = t.spots[spot]!;
+      if (!(owner instanceof HumanPlayer) || s.hands.length === 0) return;
+      const insurance = s.insurance ?? 0;
+      const spots = byPlayer.get(owner) ?? [];
+      spots.push({
+        spot,
+        insurance,
+        insurancePayout: dealerBlackjack ? insurance * 3 : 0,
+        hands: s.hands.map((h) => ({
+          cards: [...h.cards],
+          bet: h.bet,
+          doubled: h.doubled,
+          split: h.split,
+          result: h.result ?? "lose",
+          payout: h.payout,
+        })),
+      });
+      byPlayer.set(owner, spots);
+    });
+    for (const [player, spots] of byPlayer) {
+      const sessionId = this.sessionIds.get(player.id);
+      if (!sessionId) continue;
+      const wagered = spots.reduce((sum, s) => sum + s.insurance + s.hands.reduce((m, h) => m + h.bet, 0), 0);
+      const returned = spots.reduce((sum, s) => sum + s.insurancePayout + s.hands.reduce((m, h) => m + h.payout, 0), 0);
+      stats.recordBlackjackRound(player.id, {
+        game: "blackjack",
+        sessionId,
+        roundId: t.roundId,
+        at: Date.now(),
+        dealer: { cards: [...t.dealer], total: handTotal(t.dealer).total },
+        spots,
+        wagered,
+        returned,
+        net: returned - wagered,
+      });
+    }
+  }
+
   /** Everything the room holds right now (for conservation checks). */
   onTable(): number {
     return this.moneyOnTable;
@@ -666,8 +727,13 @@ export class BlackjackRoom {
   }
 
   /** Remove a member and free their spots. Pre-deal bets are refunded. */
-  private removeMember(member: Member, notify: boolean) {
+  private removeMember(member: Member, notify: boolean, reason: SessionEndReason = "left") {
     const { player } = member;
+    const sessionId = this.sessionIds.get(player.id);
+    if (sessionId) {
+      this.sessionIds.delete(player.id);
+      this.options.stats?.closeSession(sessionId, { cashOut: null, reason });
+    }
     for (const spot of this.ownedSpots(player)) {
       if (this.table.canBet) this.refund(spot);
       this.owners[spot] = null;
@@ -687,7 +753,7 @@ export class BlackjackRoom {
     if (this.turn) for (const timer of this.turn.timers) clearTimeout(timer);
     this.turn = null;
     if (this.table.canBet) this.owners.forEach((_, spot) => this.table.spots[spot]!.bet > 0 && this.refund(spot));
-    for (const member of [...this.members.values()]) this.removeMember(member, true);
+    for (const member of [...this.members.values()]) this.removeMember(member, true, "table closed");
     this.closed = true;
     this.options.onClose?.(this);
   }

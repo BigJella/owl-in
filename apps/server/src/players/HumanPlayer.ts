@@ -14,6 +14,8 @@ import { Player } from "./Player";
 export class HumanPlayer extends Player {
   readonly kind = "human" as const;
   bankroll = STARTING_BANKROLL;
+  /** Others may open this player's career page from the leaderboard. */
+  careerPublic = true;
   roomId: string | null = null;
   /** Which game `roomId` is (one table at a time across all games). */
   game: GameType | null = null;
@@ -93,7 +95,14 @@ export class HumanPlayer extends Player {
   }
 
   session(): Session {
-    return { name: this.name, bankroll: this.bankroll, roomId: this.roomId, game: this.roomId ? this.game : null };
+    return {
+      playerId: this.id,
+      name: this.name,
+      careerPublic: this.careerPublic,
+      bankroll: this.bankroll,
+      roomId: this.roomId,
+      game: this.roomId ? this.game : null,
+    };
   }
 
   sendSession() {

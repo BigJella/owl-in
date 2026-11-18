@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { CURRENCY_NAME, formatDD, type LobbyState, type Session } from "@owl-in/shared";
-import { saveName, savedName, socket } from "./networking/socket";
+import { resetToken, saveCareerPublic, saveName, savedCareerPublic, savedName, socket } from "./networking/socket";
 import { pokerStore } from "./networking/pokerStore";
 import { blackjackStore } from "./networking/blackjackStore";
 import { NamePage } from "./pages/NamePage";
@@ -9,14 +9,22 @@ import { PokerLobbyPage } from "./pages/PokerLobbyPage";
 import { PokerTablePage } from "./pages/PokerTablePage";
 import { BlackjackLobbyPage } from "./pages/BlackjackLobbyPage";
 import { BlackjackTablePage } from "./pages/BlackjackTablePage";
+import { CareerPage } from "./pages/CareerPage";
+import { LeaderboardPage } from "./pages/LeaderboardPage";
 
-type Screen = "home" | "poker" | "blackjack";
+type Screen = "home" | "poker" | "blackjack" | "career" | "leaderboard";
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [lobby, setLobby] = useState<LobbyState>({ playersOnline: 0, pokerPlayers: 0, blackjackPlayers: 0 });
   const [screen, setScreen] = useState<Screen>("home");
+  /** Whose career is open (null = yours). */
+  const [careerId, setCareerId] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
+  /** The server accepted the saved name but needs a privacy choice: the name is shown locked. */
+  const [nameLocked, setNameLocked] = useState(false);
+  /** Set once identify succeeds; session pushes before that (e.g. from a table you're still seated at) are ignored. */
+  const identified = useRef(false);
   const [busy, setBusy] = useState(false);
   /** Shown in the lobby after you leave (or are removed from) a table. */
   const [notice, setNotice] = useState<string | null>(null);
@@ -29,12 +37,23 @@ export default function App() {
   const sessionRef = useRef<Session | null>(null);
   sessionRef.current = session;
 
-  function identify(name: string) {
+  /** The server checks the token, the name (valid, not another browser's) and the privacy choice every time. */
+  function identify(name: string, careerPublic: boolean | null) {
     setBusy(true);
-    socket.emit("identify", name, (result) => {
+    socket.emit("identify", { name, careerPublic }, (result) => {
       setBusy(false);
-      if (!result.ok) return setNameError(result.error);
+      if (!result.ok) {
+        identified.current = false;
+        setSession(null);
+        if (result.code === "token") return resetToken(); // reconnects, which runs this check again
+        setNameLocked(result.code === "careerPublic");
+        setNameError(result.code === "careerPublic" ? null : result.error);
+        return;
+      }
       saveName(name);
+      saveCareerPublic(result.session.careerPublic);
+      identified.current = true;
+      setNameLocked(false);
       setNameError(null);
       setSession(result.session);
     });
@@ -44,16 +63,18 @@ export default function App() {
     // Decide "stay to watch the result" in the same update that removes the seat, so the table
     // (and its running animation) never unmounts in between.
     const handleSession = (next: Session) => {
+      if (!identified.current) return;
       const prevRoom = sessionRef.current?.roomId ?? null;
       if (prevRoom && !next.roomId && pokerStore.latest()?.message.view.leaveMode === "queued") setShowingResult(true);
       setSession(next);
     };
     socket.on("session", handleSession);
     socket.on("lobby-updated", setLobby);
-    // Re-identify on every (re)connect with the saved name; the token reclaims any seat.
+    // Verify with the server on every (re)connect: the token reclaims any seat; a taken name or a missing privacy
+    // choice brings up the name page in the right mode.
     const onConnect = () => {
       const name = savedName();
-      if (name) identify(name);
+      if (name) identify(name, savedCareerPublic());
       socket.emit("get-lobby");
     };
     socket.on("connect", onConnect);
@@ -89,6 +110,12 @@ export default function App() {
     setLastGame(game);
   }, [session?.roomId, session?.game]);
 
+  /** null = your own career (your own id counts as yours too). */
+  function openCareer(playerId: string | null) {
+    setCareerId(playerId === session?.playerId ? null : playerId);
+    setScreen("career");
+  }
+
   function leaveTable() {
     socket.emit("poker:leave");
     setScreen("poker");
@@ -96,7 +123,17 @@ export default function App() {
 
   let page;
   if (!session) {
-    page = <NamePage initialName={savedName() ?? ""} error={nameError} busy={busy} onSubmit={identify} />;
+    page = (
+      <NamePage
+        key={nameLocked ? "privacy-only" : "name"}
+        initialName={savedName() ?? ""}
+        initialPublic={savedCareerPublic()}
+        nameLocked={nameLocked}
+        error={nameError}
+        busy={busy}
+        onSubmit={identify}
+      />
+    );
   } else if (session.roomId && session.game === "blackjack") {
     page = <BlackjackTablePage onLeave={() => socket.emit("blackjack:leave")} playerName={session.name} />;
   } else if (session.roomId) {
@@ -117,6 +154,17 @@ export default function App() {
     page = <PokerLobbyPage session={session} onBack={() => setScreen("home")} />;
   } else if (screen === "blackjack") {
     page = <BlackjackLobbyPage session={session} onBack={() => setScreen("home")} />;
+  } else if (screen === "career") {
+    page = (
+      <CareerPage
+        key={careerId ?? "me"}
+        playerId={careerId}
+        onBack={() => setScreen(careerId ? "leaderboard" : "home")}
+        onPrivacyChanged={saveCareerPublic}
+      />
+    );
+  } else if (screen === "leaderboard") {
+    page = <LeaderboardPage onOpen={openCareer} onBack={() => setScreen("home")} />;
   } else {
     page = (
       <HomePage
@@ -124,6 +172,8 @@ export default function App() {
         lobby={lobby}
         onPoker={() => setScreen("poker")}
         onBlackjack={() => setScreen("blackjack")}
+        onCareer={() => openCareer(null)}
+        onLeaderboard={() => setScreen("leaderboard")}
       />
     );
   }
@@ -139,6 +189,8 @@ export default function App() {
           <button onClick={() => session && !session.roomId && setScreen("home")}>Games</button>
           <button onClick={() => session && !session.roomId && setScreen("poker")}>Poker</button>
           <button onClick={() => session && !session.roomId && setScreen("blackjack")}>Blackjack</button>
+          <button onClick={() => session && !session.roomId && openCareer(null)}>Career</button>
+          <button onClick={() => session && !session.roomId && setScreen("leaderboard")}>Leaderboard</button>
         </div>
         {session && (
           <div className="chip-balance">

@@ -4,12 +4,14 @@ import type { HumanPlayer } from "../../players/HumanPlayer";
 import type { PlayerRegistry } from "../../players/PlayerRegistry";
 import type { BlackjackRoomManager } from "../../rooms/BlackjackRoomManager";
 import type { RoomManager } from "../../rooms/RoomManager";
+import { canView, careerView, leaderboard, sessionHandsFor } from "../../stats/careerView";
+import type { StatsStore } from "../../stats/StatsStore";
 import type { GameSocket } from "../types";
 
 export const LOBBY_CHANNEL = "poker:lobby";
 export const BLACKJACK_LOBBY_CHANNEL = "blackjack:lobby";
 
-const tokenSchema = z.string().min(8).max(128);
+const tokenSchema = z.string().regex(/^[\w-]{8,128}$/);
 const nameSchema = z
   .string()
   .trim()
@@ -40,6 +42,7 @@ interface Context {
   registry: PlayerRegistry;
   rooms: RoomManager;
   blackjack: BlackjackRoomManager;
+  stats: StatsStore;
   publishLobby: () => void;
 }
 
@@ -48,17 +51,19 @@ function reply<T>(ack: Ack<T> | undefined, result: AckResult<T>) {
   if (typeof ack === "function") ack(result);
 }
 
-export function registerConnection(socket: GameSocket, { registry, rooms, blackjack, publishLobby }: Context) {
+export function registerConnection(socket: GameSocket, { registry, rooms, blackjack, stats, publishLobby }: Context) {
   // Same token from the same browser = same player, so a refresh reclaims the seat.
   const parsedToken = tokenSchema.safeParse(socket.handshake.auth?.token);
-  const token = parsedToken.success ? parsedToken.data : `anon-${socket.id}`;
-  let player: HumanPlayer | null = registry.get(token) ?? null;
+  const token = parsedToken.success ? parsedToken.data : null;
+  /** Set once this connection has passed `identify`; every other action needs it. */
+  let player: HumanPlayer | null = null;
+  /** The token's player, attached straight away so a refresh doesn't drop their seat, but not logged in yet. */
+  const returning = token ? (registry.get(token) ?? null) : null;
 
-  if (player) {
-    player.attach(socket);
-    socket.emit("session", player.session());
-    rooms.roomOf(player)?.onReconnect(player);
-    blackjack.roomOf(player)?.onReconnect(player);
+  if (returning) {
+    returning.attach(socket);
+    rooms.roomOf(returning)?.onReconnect(returning);
+    blackjack.roomOf(returning)?.onReconnect(returning);
   }
   publishLobby();
 
@@ -67,12 +72,22 @@ export function registerConnection(socket: GameSocket, { registry, rooms, blackj
     return player;
   };
 
-  socket.on("identify", (rawName, ack) => {
-    const name = nameSchema.safeParse(rawName);
-    if (!name.success) return reply(ack, { ok: false, error: name.error.issues[0]?.message ?? "Invalid name." });
+  // Verified on every page load: token, then name, then privacy. Nothing changes unless all three pass.
+  socket.on("identify", (request, ack) => {
+    if (!token) return reply(ack, { ok: false, code: "token", error: "Your browser session is invalid. Starting a new one." });
+    const name = nameSchema.safeParse(request?.name);
+    if (!name.success) return reply(ack, { ok: false, code: "name", error: name.error.issues[0]?.message ?? "Invalid name." });
+    if (registry.nameTaken(token, name.data)) {
+      return reply(ack, { ok: false, code: "name", error: `"${name.data}" belongs to another player. Pick another name.` });
+    }
+    const careerPublic = request?.careerPublic;
+    if (typeof careerPublic !== "boolean") {
+      return reply(ack, { ok: false, code: "careerPublic", error: "Choose whether your career is public or private." });
+    }
     const result = registry.identify(token, name.data);
-    if ("error" in result) return reply(ack, { ok: false, error: result.error });
+    if ("error" in result) return reply(ack, { ok: false, code: "name", error: result.error });
     player = result;
+    player.careerPublic = careerPublic;
     player.attach(socket);
     reply(ack, { ok: true, session: player.session() });
     rooms.roomOf(player)?.onReconnect(player);
@@ -164,6 +179,49 @@ export function registerConnection(socket: GameSocket, { registry, rooms, blackj
     if (!parsed.success || !room) return player.sendError("Invalid action.");
     const error = room.submitAction(player, parsed.data);
     if (error) player.sendError(error);
+  });
+
+  // ---------- career & leaderboard ----------
+
+  const chipsOf = (p: HumanPlayer) => rooms.chipsOf(p);
+  /** The player whose career is asked for (null = me), if the asker may see it. */
+  const careerTarget = (me: HumanPlayer, playerId: unknown): HumanPlayer | string => {
+    if (playerId === null || playerId === undefined) return me;
+    const parsed = z.string().min(1).max(64).safeParse(playerId);
+    const target = parsed.success ? registry.byPlayerId(parsed.data) : undefined;
+    if (!target) return "No such player.";
+    return canView(target, me) ? target : "This career is private.";
+  };
+
+  socket.on("career:get", (playerId, ack) => {
+    const me = requirePlayer(ack);
+    if (!me) return;
+    const target = careerTarget(me, playerId);
+    if (typeof target === "string") return reply(ack, { ok: false, error: target });
+    reply(ack, { ok: true, career: careerView(stats, target, me, chipsOf(target)) });
+  });
+
+  socket.on("career:session", (request, ack) => {
+    const me = requirePlayer(ack);
+    if (!me) return;
+    const target = careerTarget(me, request?.playerId ?? null);
+    if (typeof target === "string") return reply(ack, { ok: false, error: target });
+    const sessionId = z.string().min(1).max(64).safeParse(request?.sessionId);
+    if (!sessionId.success) return reply(ack, { ok: false, error: "Invalid request." });
+    reply(ack, { ok: true, hands: sessionHandsFor(stats, target, me, sessionId.data) });
+  });
+
+  socket.on("career:set-privacy", (careerPublic, ack) => {
+    const me = requirePlayer(ack);
+    if (!me) return;
+    if (typeof careerPublic !== "boolean") return reply(ack, { ok: false, error: "Invalid request." });
+    me.careerPublic = careerPublic;
+    me.sendSession();
+    reply(ack, { ok: true });
+  });
+
+  socket.on("leaderboard:get", (ack) => {
+    reply(ack, { ok: true, rows: leaderboard(registry.all(), player, chipsOf) });
   });
 
   // ---------- blackjack ----------
@@ -268,11 +326,12 @@ export function registerConnection(socket: GameSocket, { registry, rooms, blackj
   });
 
   socket.on("disconnect", () => {
-    if (player) {
-      player.detach(socket);
-      if (!player.connected) {
-        rooms.roomOf(player)?.onDisconnect(player);
-        blackjack.roomOf(player)?.onDisconnect(player);
+    const attached = player ?? returning;
+    if (attached) {
+      attached.detach(socket);
+      if (!attached.connected) {
+        rooms.roomOf(attached)?.onDisconnect(attached);
+        blackjack.roomOf(attached)?.onDisconnect(attached);
       }
     }
     publishLobby();

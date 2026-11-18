@@ -5,9 +5,11 @@ interface HomePageProps {
   lobby: LobbyState;
   onPoker: () => void;
   onBlackjack: () => void;
+  onCareer: () => void;
+  onLeaderboard: () => void;
 }
 
-export function HomePage({ name, lobby, onPoker, onBlackjack }: HomePageProps) {
+export function HomePage({ name, lobby, onPoker, onBlackjack, onCareer, onLeaderboard }: HomePageProps) {
   return (
     <section className="lobby">
       <div className="hero">
@@ -15,6 +17,10 @@ export function HomePage({ name, lobby, onPoker, onBlackjack }: HomePageProps) {
         <h1>Choose your game, {name}.</h1>
         <p>Play for Dining Dollars. Outplay the bots.</p>
         <div className="online"><i /> {lobby.playersOnline} players online</div>
+        <div className="hero-links">
+          <button className="secondary" onClick={onCareer}>Your career</button>
+          <button className="secondary" onClick={onLeaderboard}>Leaderboard</button>
+        </div>
       </div>
 
       <div className="game-grid">

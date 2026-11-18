@@ -1,12 +1,15 @@
 import { randomUUID } from "node:crypto";
 import type { BlackjackRoomSummary } from "@owl-in/shared";
 import type { HouseBank } from "../economy/HouseBank";
+import type { StatsStore } from "../stats/StatsStore";
 import type { HumanPlayer } from "../players/HumanPlayer";
 import { BlackjackRoom, type BlackjackTiming } from "./BlackjackRoom";
 import { MIN_OPEN_ROOMS } from "./RoomManager";
 
 export interface BlackjackRoomManagerOptions {
   bank: HouseBank;
+  /** Career stats store shared by every room. */
+  stats?: StatsStore;
   timing?: Partial<BlackjackTiming>;
   /** Called (batched per tick) whenever the room list changes. */
   onRoomsChanged?: (rooms: BlackjackRoomSummary[]) => void;
@@ -30,6 +33,7 @@ export class BlackjackRoomManager {
       name,
       minBet,
       bank: this.options.bank,
+      ...(this.options.stats ? { stats: this.options.stats } : {}),
       ...(this.options.timing ? { timing: this.options.timing } : {}),
       onChange: () => this.publish(),
       canClose: () => this.rooms.size > MIN_OPEN_ROOMS,

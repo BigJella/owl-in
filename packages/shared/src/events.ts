@@ -1,5 +1,6 @@
 import type { PokerAction, PokerRoomSummary, PokerStateMessage } from "./poker";
 import type { BlackjackAction, BlackjackRoomSummary, BlackjackStateMessage } from "./blackjack";
+import type { CareerView, HandRecord, LeaderboardRow } from "./career";
 import type { Ack, LobbyState, Session } from "./types";
 
 /**
@@ -7,7 +8,18 @@ import type { Ack, LobbyState, Session } from "./types";
  * The client also sends `{ token }` in the handshake `auth` so a refresh reclaims its seat.
  */
 export interface ClientToServerEvents {
-  identify: (name: string, ack: Ack<{ session: Session }>) => void;
+  /**
+   * Log in (on every page load / reconnect) or pick a new name. The server checks the browser token, the name (valid and not
+   * another browser's) and the privacy choice; failures carry `code` "token" | "name" | "careerPublic". `careerPublic: null`
+   * means the browser has no saved choice yet.
+   */
+  identify: (request: { name: string; careerPublic: boolean | null }, ack: Ack<{ session: Session }>) => void;
+  /** null = your own career. */
+  "career:get": (playerId: string | null, ack: Ack<{ career: CareerView }>) => void;
+  /** Every hand / round of one table session. */
+  "career:session": (request: { playerId: string | null; sessionId: string }, ack: Ack<{ hands: HandRecord[] }>) => void;
+  "career:set-privacy": (careerPublic: boolean, ack: Ack) => void;
+  "leaderboard:get": (ack: Ack<{ rows: LeaderboardRow[] }>) => void;
   "get-lobby": () => void;
   "poker:subscribe-rooms": () => void;
   "poker:unsubscribe-rooms": () => void;

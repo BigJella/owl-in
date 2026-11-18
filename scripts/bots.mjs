@@ -11,13 +11,15 @@ const fail = (msg) => {
   process.exit(1);
 };
 
+// Names are reserved per server run, so every run uses fresh ones.
+const RUN = Date.now().toString(36).slice(-4);
 const connect = (name) =>
   new Promise((resolve) => {
     const socket = io(url, { auth: { token: `smoke-${name}-${Date.now()}` }, transports: ["websocket"] });
-    socket.on("connect", () => socket.emit("identify", name, (r) => (r.ok ? resolve(socket) : fail(r.error))));
+    socket.on("connect", () => socket.emit("identify", { name, careerPublic: true }, (r) => (r.ok ? resolve(socket) : fail(r.error))));
   });
 
-const clients = await Promise.all(Array.from({ length: clientCount }, (_, i) => connect(`smoke${i + 1}`)));
+const clients = await Promise.all(Array.from({ length: clientCount }, (_, i) => connect(`smoke${i + 1}-${RUN}`)));
 
 const rooms = await new Promise((resolve) => {
   clients[0].once("poker:rooms", resolve);

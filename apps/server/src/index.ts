@@ -6,6 +6,7 @@ import { HouseBank } from "./economy/HouseBank";
 import { PlayerRegistry } from "./players/PlayerRegistry";
 import { RoomManager } from "./rooms/RoomManager";
 import { BlackjackRoomManager } from "./rooms/BlackjackRoomManager";
+import { MemoryStatsStore } from "./stats/MemoryStatsStore";
 import type { GameServer } from "./networking/types";
 import { BLACKJACK_LOBBY_CHANNEL, LOBBY_CHANNEL, registerConnection } from "./networking/handlers/connectionHandler";
 
@@ -20,13 +21,17 @@ const io: GameServer = new Server(httpServer, {
 
 const registry = new PlayerRegistry();
 const bank = new HouseBank();
+// Career stats and hand history, in memory like bankrolls (a restart wipes both).
+const stats = new MemoryStatsStore();
 const rooms = new RoomManager({
   bank,
+  stats,
   onRoomsChanged: (list) => io.to(LOBBY_CHANNEL).emit("poker:rooms", list),
 });
 rooms.seed();
 const blackjack = new BlackjackRoomManager({
   bank,
+  stats,
   onRoomsChanged: (list) => io.to(BLACKJACK_LOBBY_CHANNEL).emit("blackjack:rooms", list),
 });
 blackjack.seed();
@@ -42,7 +47,7 @@ app.get("/health", (_request, response) => {
   response.json({ status: "ok", playersOnline: registry.onlineCount(), rooms: rooms.list(), blackjack: blackjack.list() });
 });
 
-io.on("connection", (socket) => registerConnection(socket, { registry, rooms, blackjack, publishLobby }));
+io.on("connection", (socket) => registerConnection(socket, { registry, rooms, blackjack, stats, publishLobby }));
 
 const port = Number(process.env.PORT ?? 3000);
 httpServer.listen(port, "0.0.0.0", () => {
