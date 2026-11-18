@@ -49,7 +49,7 @@ export class RoomManager {
   }
 
   roomOf(player: HumanPlayer): PokerRoom | undefined {
-    return this.get(player.roomId);
+    return player.game === "poker" ? this.get(player.roomId) : undefined;
   }
 
   list(): PokerRoomSummary[] {

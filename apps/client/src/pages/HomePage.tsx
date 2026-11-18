@@ -4,9 +4,10 @@ interface HomePageProps {
   name: string;
   lobby: LobbyState;
   onPoker: () => void;
+  onBlackjack: () => void;
 }
 
-export function HomePage({ name, lobby, onPoker }: HomePageProps) {
+export function HomePage({ name, lobby, onPoker, onBlackjack }: HomePageProps) {
   return (
     <section className="lobby">
       <div className="hero">
@@ -42,8 +43,8 @@ export function HomePage({ name, lobby, onPoker }: HomePageProps) {
               <p className="game-label">FAST PLAY</p>
               <h2>Blackjack</h2>
             </div>
-            <span className="table-count">Coming soon</span>
-            <button disabled>Coming Soon</button>
+            <span className="table-count">{lobby.blackjackPlayers} at tables</span>
+            <button onClick={onBlackjack}>Find a Table <b>→</b></button>
           </div>
         </article>
       </div>

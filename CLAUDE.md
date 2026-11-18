@@ -1,7 +1,7 @@
 # OWL IN — KSU Card Club
 
 A multiplayer card-game website built for the **KSU AI Club Hackathon 2026**. Players join from any device on the LAN,
-pick a name, and play Texas Hold'em against each other **and against AI bot players** for **KSU Dining Dollars**
+pick a name, and play Texas Hold'em and Blackjack against each other **and against AI bot players** for **KSU Dining Dollars**
 (play money). AI is the hackathon's theme: bots are first-class players, deterministic today and LLM-driven next.
 
 > This file is the onboarding doc for new Claude Code sessions. Keep it current when you change rules,
@@ -85,13 +85,14 @@ TypeScript monorepo with npm workspaces. Node 26, npm 12, Windows (bash + PowerS
 | `npm test` | Vitest across the repo (engine + server room tests) |
 | `npm run build` | Vite production build of the client (a >500 kB chunk warning from PixiJS is expected) |
 | `node scripts/bots.mjs [url] [hands] [clients]` | End-to-end smoke test: N socket clients play real hands; checks bot replacement, no hole-card leaks, rebuys |
+| `node scripts/blackjack-bots.mjs [url] [rounds] [clients]` | Blackjack e2e smoke: clients bet (one takes a bot's spot) and play random legal actions; checks bots only in spots 1–3, ≤3 spots each, no dealer hole-card leak |
 | `node scripts/generate-placeholder-cards.mjs` | Regenerates placeholder card/chip SVGs into `apps/client/public/assets` |
 
 - Server runs TypeScript directly via `tsx` (no build step). Workspace packages export raw `.ts` (`"exports": "./src/index.ts"`).
 - LAN play: open `http://<pc-ip>:5173`. The client connects to `http://<same-host>:3000` (override with `VITE_SERVER_URL`).
   Windows Firewall may prompt for Node.
 - **Before finishing work:** `npm run typecheck && npm test && npm run build`, and for gameplay changes run `scripts/bots.mjs`
-  against `npm run dev`. For UI changes, check in a browser at desktop (1280px) **and** phone (390px) widths.
+  (poker) and/or `scripts/blackjack-bots.mjs` against `npm run dev`. For UI changes, check in a browser at desktop (1280px) **and** phone (390px) widths.
   Previous sessions drove headless Chrome (`C:/Program Files/Google/Chrome/Application/chrome.exe`) with `puppeteer-core`
   installed in the session scratchpad (not a project dependency). Gotchas:
   - Use a separate `browser.createBrowserContext()` per simulated player (localStorage holds the session token and name).
@@ -108,8 +109,11 @@ apps/
   client/                     React 19 + Vite + PixiJS 8 + gsap (player website)
     src/App.tsx               Screen routing: Name → Home → Poker lobby → Table; session + "left table" notice
     src/networking/socket.ts  Typed Socket.IO client; per-browser session token (localStorage) for seat reclaim
-    src/networking/pokerStore.ts  Buffers every poker:state message outside React (animations never drop events)
+    src/networking/gameStore.ts   createGameStore(): buffers a game's state messages outside React (animations never drop events)
+    src/networking/pokerStore.ts, blackjackStore.ts  The two stores built from it
+    src/components/ClockBlock.tsx  ClockBlock + useNow, shared by both table pages
     src/pages/                NamePage, HomePage, PokerLobbyPage (sortable/filterable room list, buy-in/create dialogs),
+                              BlackjackLobbyPage, BlackjackTablePage (strip; sidebar BetPanel / insurance / PlayPanel),
                               PokerTablePage (shared TableStrip; sidebar = static info top + controls bottom;
                               ClockBlock, ReadyPanel, RebuyDialog, LeaveDialog, cashed-out result view)
     src/game/poker/
@@ -119,13 +123,19 @@ apps/
                               then snaps to the authoritative view
       ActionBar.tsx           Fold / Check / Call / Raise (presets, slider, typed amount); laid out vertically in the sidebar
       assets.ts               Card/chip textures (public/assets/cards/{rank}{S|H|D|C}.svg + back.svg, chips/chip.svg)
+    src/game/blackjack/
+      BlackjackScene.tsx      Same shared-canvas pattern; spot clicks select the betting spot in the sidebar
+      BlackjackRenderer.ts    Half-moon felt, dealer + shoe/discard tray, 7 betting boxes; animates events against a local model
   server/                     Express + Socket.IO, run with tsx
     src/index.ts              Wires registry, house bank, room manager, socket handlers
     src/networking/handlers/connectionHandler.ts  All socket events, zod-validated
     src/players/              Player (abstract) → HumanPlayer, BotPlayer; PlayerRegistry (token → human)
-    src/ai/                   PokerStrategy interface, RuleBasedStrategy (deterministic), LlmStrategy (stub)
+    src/ai/                   PokerStrategy interface, RuleBasedStrategy (deterministic), LlmStrategy (stub);
+                              BlackjackStrategy interface, BasicStrategy (6-deck S17 DAS LS chart)
     src/rooms/PokerRoom.ts    The table loop: turns, time banks, ready-up, bot seating/pacing, cash-outs, penalties, views
     src/rooms/RoomManager.ts  Create/list rooms, keeps ≥2 open, batches room-list pushes
+    src/rooms/BlackjackRoom.ts  Blackjack loop: betting window, spot claims, bot fill (spots 1–3), insurance, turns, money
+    src/rooms/BlackjackRoomManager.ts  Same as RoomManager for blackjack (seeds "Owl's Nest" $10 and "High Limit" $100)
     src/economy/HouseBank.ts  Source/sink for bot chips (keeps total chips constant)
 packages/
   game-engine/                Pure rules: no React/Pixi/Express/Socket.IO imports
@@ -133,11 +143,13 @@ packages/
     src/poker/PokerTable.ts   Hold'em state machine; returns PokerEvent[] from every mutation
     src/poker/pots.ts         Side-pot builder
     src/poker/evaluate.ts     pokersolver wrapper (has a local pokersolver.d.ts + triple-slash reference)
-    src/blackjack/index.ts    handValue only (blackjack not built yet)
+    src/blackjack/            Shoe (persistent multi-deck shoe, cut card, discard tray), hand helpers,
+                              BlackjackTable state machine returning BlackjackEvent[] (like PokerTable)
   shared/                     Types + constants used by client and server
     src/poker.ts              Views (PokerTableView, PokerSeatView, PokerRoomSummary), constants, formatDD, describeAction, STAGE_LABEL
+    src/blackjack.ts          BlackjackTableView/SpotView/RoomSummary, BJ_* constants and labels
     src/events.ts             ClientToServerEvents / ServerToClientEvents (Socket.IO generics on both ends)
-scripts/                      bots.mjs (e2e smoke), generate-placeholder-cards.mjs
+scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generate-placeholder-cards.mjs
 ```
 
 ---
@@ -205,6 +217,30 @@ scripts/                      bots.mjs (e2e smoke), generate-placeholder-cards.m
 - Disconnects: the seat is held while the time bank drains in real time, and turns auto check/fold. When the bank hits 0 you're
   kicked at the next gap. Reconnecting with the same browser (token) reclaims the seat.
 
+**Blackjack (agreed with the user, keep these)**
+- 7 spots. Spot 1 is first base (dealer's left = right side of the screen) and acts first.
+- A player may bet on up to **3** spots. Bots **only ever sit in spots 1–3**, and only in free ones (filled at the start of
+  each betting round). Betting on a bot's spot takes it over immediately (the bot's bet goes back to the house).
+- **6-deck shoe, dealer stands on all 17s, blackjack pays 3:2**, double on any two (also after split), split up to 4 hands,
+  split aces once with one card each (21 there isn't blackjack), insurance 2:1 on a dealer ace, dealer peeks on A/10,
+  **late surrender** (first decision only, not after a split). 21 auto-stands.
+- **Card counting is secretly supposed to work.** The shoe persists across rounds and is only reshuffled between rounds after the
+  cut card (70–80% penetration); one card is burned after each shuffle; every card (including the hole card at the end) is shown
+  face up; the canvas shows the shoe and discard-tray levels and the strip shows decks left (to ½ deck). Limits are min to
+  **50× min**, with no penalty for spreading. **Never show the count, and don't add continuous shuffling or a bet-spread penalty.**
+  No hint copy (the user didn't want one).
+- Bets come straight from the bankroll (no buy-in). The HouseBank is the dealer: stakes go to the house at settlement and it pays
+  payouts. Bot stakes come from and return to the house. `BlackjackRoom.onTable()` + bankrolls + house is conserved.
+- Rounds: a **15s betting window** (closes early once every connected human holding a spot has pressed Deal), the deal,
+  an 8s insurance window when the dealer shows an ace, then turns. Human turns use the same time bank as poker
+  (+20s per hand, cap 120s, **auto-stand** at 0). Bots think 0.8–1.6s. Results stay up 3s (after their animation),
+  then cards are swept to the tray. Bot-only tables deal one round per 20s.
+- Spots you didn't bet on are released when betting closes. Rebet repeats last round's bets.
+- Leaving: between rounds it's immediate (pre-deal bets refunded). With hands in play it's queued ("Leave after this round"
+  dialog) and you're removed when the round ends. **No rejoin lockout in blackjack.** Disconnected players' hands auto-stand;
+  after 60s away they're removed at the next betting round.
+- One table at a time across both games (`HumanPlayer.game` + `roomId`; `Session.game` tells the client which page to show).
+
 ---
 
 ## Implementation checklist
@@ -227,13 +263,16 @@ scripts/                      bots.mjs (e2e smoke), generate-placeholder-cards.m
 - [x] Shared fixed-grid table strip (identical for all players, no shifting); sidebar with static info top / controls bottom;
       time bank + "+20s next turn" preview between turns
 - [x] Git repo on `main` (history: initial commit → UI rework → UI improvements → sidebar → table/sidebar polish)
-- [x] Tests: 37 Vitest tests (engine + rooms with fake timers incl. 30-min soak); `scripts/bots.mjs` e2e
+- [x] Tests: 64 Vitest tests (poker + blackjack engines, rooms with fake timers incl. soaks); `scripts/bots.mjs` and
+      `scripts/blackjack-bots.mjs` e2e
+- [x] Blackjack: engine (shoe, S17, 3:2, double/split/insurance/late surrender), BlackjackRoom (spots, bot fill 1–3,
+      betting window, insurance, time bank), lobby + table page + Pixi renderer (shoe/tray levels, deal/flip/payout/sweep/shuffle
+      animations), basic-strategy bots
 
 **Not done / known gaps**
 - [ ] Real card and chip art (placeholders are SVGs; swap the files and keep the names, change `CARD_EXT` for PNGs)
 - [ ] LLM bots (wire `CompleteFn` in `LlmStrategy` to the Claude API and pick which bots use it)
 - [ ] Persistence (bankrolls, penalties and rooms are in memory; a server restart wipes them)
-- [ ] Blackjack (engine has `handValue` only; the UI card says "Coming soon")
 - [ ] `npm audit` reports high-severity advisories (not investigated)
 - [ ] Admin dashboard (deliberately skipped so far)
 
@@ -251,7 +290,7 @@ scripts/                      bots.mjs (e2e smoke), generate-placeholder-cards.m
 3. **Persistence & identity.** SQLite (e.g. Drizzle) for bankrolls, penalties and hand history. Maybe a leaderboard
    (the nav already has a placeholder link).
 4. **Content & polish.** Real card art, sounds, chat/emotes, hand history panel, spectator mode.
-5. **Blackjack.** Add an engine in `packages/game-engine/src/blackjack`, reuse the room/player/bot patterns, and add a lobby card.
+5. **Blackjack: done.** Possible follow-ups: LLM blackjack bots (`BlackjackStrategy`), a card-counting bot that spreads its bets.
 6. **Ops.** Admin dashboard (rooms, players, house bank), production build served by Express, deploy notes.
 
 ---
@@ -263,6 +302,8 @@ scripts/                      bots.mjs (e2e smoke), generate-placeholder-cards.m
 - [ ] Replace placeholder card SVGs with real art
 - [ ] Add a leaderboard (bankroll ranking), needs persistence first
 - [ ] Consider a short "Folded · $10 in pot" style label so dead money on folded seats isn't confusing
+- [ ] Blackjack: the canvas is small at phone width (sidebar controls are the primary UI there); consider a phone-specific layout
+- [ ] Blackjack: insurance and split flows are covered by engine/room tests but were not screenshot-checked in a browser
 
 ---
 

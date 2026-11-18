@@ -2,25 +2,30 @@ import { useEffect, useRef, useState } from "react";
 import { CURRENCY_NAME, formatDD, type LobbyState, type Session } from "@owl-in/shared";
 import { saveName, savedName, socket } from "./networking/socket";
 import { pokerStore } from "./networking/pokerStore";
+import { blackjackStore } from "./networking/blackjackStore";
 import { NamePage } from "./pages/NamePage";
 import { HomePage } from "./pages/HomePage";
 import { PokerLobbyPage } from "./pages/PokerLobbyPage";
 import { PokerTablePage } from "./pages/PokerTablePage";
+import { BlackjackLobbyPage } from "./pages/BlackjackLobbyPage";
+import { BlackjackTablePage } from "./pages/BlackjackTablePage";
 
-type Screen = "home" | "poker";
+type Screen = "home" | "poker" | "blackjack";
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
-  const [lobby, setLobby] = useState<LobbyState>({ playersOnline: 0, pokerPlayers: 0 });
+  const [lobby, setLobby] = useState<LobbyState>({ playersOnline: 0, pokerPlayers: 0, blackjackPlayers: 0 });
   const [screen, setScreen] = useState<Screen>("home");
   const [nameError, setNameError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   /** Shown in the lobby after you leave (or are removed from) a table. */
   const [notice, setNotice] = useState<string | null>(null);
   const [lastRoomId, setLastRoomId] = useState<string | null>(null);
+  const [lastGame, setLastGame] = useState<Session["game"]>(null);
   /** After a queued cash-out, keep showing the table so the final hand's result can play out. */
   const [showingResult, setShowingResult] = useState(false);
   const leftNotice = "You've left the table. You can rejoin it in 30 minutes.";
+  const leftBlackjackNotice = "You've left the table.";
   const sessionRef = useRef<Session | null>(null);
   sessionRef.current = session;
 
@@ -63,10 +68,15 @@ export default function App() {
   // Leaving (or being removed / busting) clears roomId: drop back to the room list.
   useEffect(() => {
     const roomId = session?.roomId ?? null;
+    const game = session?.game ?? null;
     if (roomId) {
-      setScreen("poker");
+      setScreen(game === "blackjack" ? "blackjack" : "poker");
       setNotice(null);
       setShowingResult(false);
+    } else if (lastRoomId && lastGame === "blackjack") {
+      blackjackStore.reset();
+      setScreen("blackjack");
+      setNotice(leftBlackjackNotice);
     } else if (lastRoomId) {
       if (pokerStore.latest()?.message.view.leaveMode === "queued") {
         setShowingResult(true); // stay to watch the last hand; they'll click back to the lobby
@@ -76,7 +86,8 @@ export default function App() {
       }
     }
     setLastRoomId(roomId);
-  }, [session?.roomId]);
+    setLastGame(game);
+  }, [session?.roomId, session?.game]);
 
   function leaveTable() {
     socket.emit("poker:leave");
@@ -86,6 +97,8 @@ export default function App() {
   let page;
   if (!session) {
     page = <NamePage initialName={savedName() ?? ""} error={nameError} busy={busy} onSubmit={identify} />;
+  } else if (session.roomId && session.game === "blackjack") {
+    page = <BlackjackTablePage onLeave={() => socket.emit("blackjack:leave")} playerName={session.name} />;
   } else if (session.roomId) {
     page = <PokerTablePage onLeave={leaveTable} playerName={session.name} />;
   } else if (showingResult) {
@@ -102,8 +115,17 @@ export default function App() {
     );
   } else if (screen === "poker") {
     page = <PokerLobbyPage session={session} onBack={() => setScreen("home")} />;
+  } else if (screen === "blackjack") {
+    page = <BlackjackLobbyPage session={session} onBack={() => setScreen("home")} />;
   } else {
-    page = <HomePage name={session.name} lobby={lobby} onPoker={() => setScreen("poker")} />;
+    page = (
+      <HomePage
+        name={session.name}
+        lobby={lobby}
+        onPoker={() => setScreen("poker")}
+        onBlackjack={() => setScreen("blackjack")}
+      />
+    );
   }
 
   return (
@@ -116,6 +138,7 @@ export default function App() {
         <div className="nav-links">
           <button onClick={() => session && !session.roomId && setScreen("home")}>Games</button>
           <button onClick={() => session && !session.roomId && setScreen("poker")}>Poker</button>
+          <button onClick={() => session && !session.roomId && setScreen("blackjack")}>Blackjack</button>
         </div>
         {session && (
           <div className="chip-balance">

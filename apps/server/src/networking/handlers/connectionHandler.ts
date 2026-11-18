@@ -1,11 +1,13 @@
 import { z } from "zod";
-import { ALLOWED_BIG_BLINDS, type Ack, type AckResult } from "@owl-in/shared";
+import { ALLOWED_BIG_BLINDS, BJ_ALLOWED_MIN_BETS, type Ack, type AckResult } from "@owl-in/shared";
 import type { HumanPlayer } from "../../players/HumanPlayer";
 import type { PlayerRegistry } from "../../players/PlayerRegistry";
+import type { BlackjackRoomManager } from "../../rooms/BlackjackRoomManager";
 import type { RoomManager } from "../../rooms/RoomManager";
 import type { GameSocket } from "../types";
 
 export const LOBBY_CHANNEL = "poker:lobby";
+export const BLACKJACK_LOBBY_CHANNEL = "blackjack:lobby";
 
 const tokenSchema = z.string().min(8).max(128);
 const nameSchema = z
@@ -20,6 +22,13 @@ const createSchema = z.object({
   buyIn: z.number().int(),
 });
 const joinSchema = z.object({ roomId: z.string().min(1).max(64), buyIn: z.number().int() });
+const bjCreateSchema = z.object({
+  name: z.string().trim().min(1).max(24),
+  minBet: z.number().refine((n) => (BJ_ALLOWED_MIN_BETS as readonly number[]).includes(n), "Unsupported limits."),
+});
+const bjJoinSchema = z.object({ roomId: z.string().min(1).max(64) });
+const bjBetSchema = z.object({ spot: z.number().int().min(0).max(6), amount: z.number().int().positive() });
+const bjActionSchema = z.enum(["hit", "stand", "double", "split", "surrender"]);
 const actionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("fold") }),
   z.object({ type: z.literal("check") }),
@@ -30,6 +39,7 @@ const actionSchema = z.discriminatedUnion("type", [
 interface Context {
   registry: PlayerRegistry;
   rooms: RoomManager;
+  blackjack: BlackjackRoomManager;
   publishLobby: () => void;
 }
 
@@ -38,7 +48,7 @@ function reply<T>(ack: Ack<T> | undefined, result: AckResult<T>) {
   if (typeof ack === "function") ack(result);
 }
 
-export function registerConnection(socket: GameSocket, { registry, rooms, publishLobby }: Context) {
+export function registerConnection(socket: GameSocket, { registry, rooms, blackjack, publishLobby }: Context) {
   // Same token from the same browser = same player, so a refresh reclaims the seat.
   const parsedToken = tokenSchema.safeParse(socket.handshake.auth?.token);
   const token = parsedToken.success ? parsedToken.data : `anon-${socket.id}`;
@@ -48,6 +58,7 @@ export function registerConnection(socket: GameSocket, { registry, rooms, publis
     player.attach(socket);
     socket.emit("session", player.session());
     rooms.roomOf(player)?.onReconnect(player);
+    blackjack.roomOf(player)?.onReconnect(player);
   }
   publishLobby();
 
@@ -65,6 +76,7 @@ export function registerConnection(socket: GameSocket, { registry, rooms, publis
     player.attach(socket);
     reply(ack, { ok: true, session: player.session() });
     rooms.roomOf(player)?.onReconnect(player);
+    blackjack.roomOf(player)?.onReconnect(player);
     publishLobby();
   });
 
@@ -79,14 +91,20 @@ export function registerConnection(socket: GameSocket, { registry, rooms, publis
     socket.leave(LOBBY_CHANNEL);
   });
 
+  /** One table at a time across both games: leave the current one first (if you're free to). */
+  const leaveOtherTable = (me: HumanPlayer, target: object): string | null => {
+    const current = rooms.roomOf(me) ?? blackjack.roomOf(me);
+    if (!current || current === target) return null;
+    if (!current.canLeaveNow(me)) return `Finish your hand at ${current.name} first.`;
+    current.leave(me);
+    return null;
+  };
+
   const joinRoom = (me: HumanPlayer, roomId: string, buyIn: number): AckResult<{ roomId: string }> => {
     const room = rooms.get(roomId);
     if (!room) return { ok: false, error: "That table no longer exists." };
-    const current = rooms.roomOf(me);
-    if (current && current !== room) {
-      if (!current.canLeaveNow(me)) return { ok: false, error: `Finish your hand at ${current.name} first.` };
-      current.leave(me);
-    }
+    const busy = leaveOtherTable(me, room);
+    if (busy) return { ok: false, error: busy };
     const error = room.join(me, buyIn);
     if (error) return { ok: false, error };
     me.sendSession();
@@ -148,10 +166,114 @@ export function registerConnection(socket: GameSocket, { registry, rooms, publis
     if (error) player.sendError(error);
   });
 
+  // ---------- blackjack ----------
+
+  socket.on("blackjack:subscribe-rooms", () => {
+    socket.join(BLACKJACK_LOBBY_CHANNEL);
+    socket.emit("blackjack:rooms", blackjack.list());
+  });
+
+  socket.on("blackjack:unsubscribe-rooms", () => {
+    socket.leave(BLACKJACK_LOBBY_CHANNEL);
+  });
+
+  const joinBlackjack = (me: HumanPlayer, roomId: string): AckResult<{ roomId: string }> => {
+    const room = blackjack.get(roomId);
+    if (!room) return { ok: false, error: "That table no longer exists." };
+    const busy = leaveOtherTable(me, room);
+    if (busy) return { ok: false, error: busy };
+    const error = room.join(me);
+    if (error) return { ok: false, error };
+    me.sendSession();
+    publishLobby();
+    return { ok: true, roomId: room.id };
+  };
+
+  socket.on("blackjack:create", (request, ack) => {
+    const me = requirePlayer(ack);
+    if (!me) return;
+    const parsed = bjCreateSchema.safeParse(request);
+    if (!parsed.success) return reply(ack, { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid table." });
+    const current = rooms.roomOf(me) ?? blackjack.roomOf(me);
+    if (current && !current.canLeaveNow(me)) return reply(ack, { ok: false, error: `Finish your hand at ${current.name} first.` });
+    const room = blackjack.create(parsed.data.name, parsed.data.minBet);
+    reply(ack, joinBlackjack(me, room.id));
+  });
+
+  socket.on("blackjack:join", (request, ack) => {
+    const me = requirePlayer(ack);
+    if (!me) return;
+    const parsed = bjJoinSchema.safeParse(request);
+    if (!parsed.success) return reply(ack, { ok: false, error: "Invalid request." });
+    reply(ack, joinBlackjack(me, parsed.data.roomId));
+  });
+
+  socket.on("blackjack:leave", () => {
+    if (!player) return;
+    const room = blackjack.roomOf(player);
+    if (!room) return;
+    const immediate = room.canLeaveNow(player);
+    const error = room.leave(player);
+    if (error) return player.sendError(error);
+    player.sendSession();
+    if (immediate) socket.emit("blackjack:left");
+    publishLobby();
+  });
+
+  socket.on("blackjack:bet", (request, ack) => {
+    if (!player) return reply(ack, { ok: false, error: "Pick a name first." });
+    const room = blackjack.roomOf(player);
+    const parsed = bjBetSchema.safeParse(request);
+    if (!room || !parsed.success) return reply(ack, { ok: false, error: "Invalid bet." });
+    const error = room.bet(player, parsed.data.spot, parsed.data.amount);
+    reply(ack, error ? { ok: false, error } : { ok: true });
+  });
+
+  socket.on("blackjack:clear-bet", (spot) => {
+    if (!player) return;
+    const parsed = z.number().int().min(0).max(6).safeParse(spot);
+    const room = blackjack.roomOf(player);
+    if (!room || !parsed.success) return;
+    const error = room.clearBet(player, parsed.data);
+    if (error) player.sendError(error);
+  });
+
+  socket.on("blackjack:rebet", (ack) => {
+    if (!player) return reply(ack, { ok: false, error: "Pick a name first." });
+    const room = blackjack.roomOf(player);
+    if (!room) return reply(ack, { ok: false, error: "You're not at a table." });
+    const error = room.rebet(player);
+    reply(ack, error ? { ok: false, error } : { ok: true });
+  });
+
+  socket.on("blackjack:ready", () => {
+    if (!player) return;
+    const error = blackjack.roomOf(player)?.setReady(player) ?? null;
+    if (error) player.sendError(error);
+  });
+
+  socket.on("blackjack:insurance", (take) => {
+    if (!player || typeof take !== "boolean") return;
+    const error = blackjack.roomOf(player)?.insurance(player, take) ?? null;
+    if (error) player.sendError(error);
+  });
+
+  socket.on("blackjack:act", (rawAction) => {
+    if (!player) return;
+    const parsed = bjActionSchema.safeParse(rawAction);
+    const room = blackjack.roomOf(player);
+    if (!parsed.success || !room) return player.sendError("Invalid action.");
+    const error = room.submitAction(player, parsed.data);
+    if (error) player.sendError(error);
+  });
+
   socket.on("disconnect", () => {
     if (player) {
       player.detach(socket);
-      if (!player.connected) rooms.roomOf(player)?.onDisconnect(player);
+      if (!player.connected) {
+        rooms.roomOf(player)?.onDisconnect(player);
+        blackjack.roomOf(player)?.onDisconnect(player);
+      }
     }
     publishLobby();
   });

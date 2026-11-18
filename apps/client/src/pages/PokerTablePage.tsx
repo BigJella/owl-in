@@ -1,29 +1,12 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { formatDD, STAGE_LABEL, TIME_BANK_MAX_MS, TIME_BANK_REFILL_MS, type PokerTableView } from "@owl-in/shared";
+import { formatDD, STAGE_LABEL, type PokerTableView } from "@owl-in/shared";
+import { ClockBlock, useNow, type Clock } from "../components/ClockBlock";
 import { socket } from "../networking/socket";
 import { usePokerState, type ReceivedMessage } from "../networking/pokerStore";
 import { PokerScene } from "../game/poker/PokerScene";
 import { ActionBar } from "../game/poker/ActionBar";
 
 const fmt = formatDD;
-
-/** Re-render a few times a second so countdowns tick. */
-function useNow(active: boolean) {
-  const [now, setNow] = useState(() => performance.now());
-  useEffect(() => {
-    if (!active) return;
-    const id = window.setInterval(() => setNow(performance.now()), 200);
-    return () => window.clearInterval(id);
-  }, [active]);
-  return now;
-}
-
-type Clock =
-  | { kind: "rebuy"; seconds: number }
-  | { kind: "turn"; seconds: number }
-  | { kind: "grace"; seconds: number; bank: number }
-  | { kind: "draining"; seconds: number }
-  | { kind: "bank"; seconds: number };
 
 /** Your own clock: your turn, the ready-up grace/drain between hands, or just your banked time. */
 function myClock(received: ReceivedMessage, now: number): Clock | null {
@@ -257,44 +240,6 @@ export function PokerTablePage({
       )}
       {error && <div className="toast">{error}</div>}
     </section>
-  );
-}
-
-/**
- * Your clock, big. Always the same height (label / number / note) so the sidebar never jumps.
- * Between your turns it shows your banked time plus a greyed "+Ns next turn" refill preview.
- */
-function ClockBlock({ clock }: { clock: Clock }) {
-  const label = {
-    rebuy: "Meal plan empty",
-    turn: "Your turn",
-    grace: "Ready up",
-    draining: "Not ready · bank draining",
-    bank: "Time bank",
-  }[clock.kind];
-  const urgent = clock.kind === "rebuy" || clock.kind === "draining" || (clock.kind === "turn" && clock.seconds <= 5);
-  const live = clock.kind !== "bank";
-  // Each turn adds TIME_BANK_REFILL_MS, capped at TIME_BANK_MAX_MS.
-  const refill =
-    clock.kind === "bank"
-      ? Math.max(0, Math.min(TIME_BANK_REFILL_MS, TIME_BANK_MAX_MS - clock.seconds * 1000)) / 1000
-      : null;
-  const note = {
-    rebuy: "Reload or cash out",
-    turn: "Auto check / fold at 0",
-    grace: `Then your bank (${clock.kind === "grace" ? clock.bank : 0}s) drains`,
-    draining: "Ready up to stop the drain",
-    bank: "Auto check / fold at 0",
-  }[clock.kind];
-  return (
-    <div className={`clock-block ${urgent ? "urgent" : live ? "live" : ""}`}>
-      <small>{label}</small>
-      <div className="clock-row">
-        <strong>{clock.seconds}s</strong>
-        {refill !== null && <span className="clock-refill">{refill > 0 ? `+${refill}s next turn` : "Max banked"}</span>}
-      </div>
-      <em>{note}</em>
-    </div>
   );
 }
 

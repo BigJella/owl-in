@@ -171,6 +171,7 @@ export class PokerRoom {
       // Kicked for being away but came back before the gap: keep the seat.
       this.occupants[existing]!.leaving = false;
       player.roomId = this.id;
+      player.game = "poker";
       this.hurryNextHand();
       this.onReconnect(player);
       this.changed();
@@ -191,6 +192,7 @@ export class PokerRoom {
 
     player.bankroll -= buyIn;
     player.roomId = this.id;
+    player.game = "poker";
     this.waiting.push({ player, buyIn });
 
     this.hurryNextHand();

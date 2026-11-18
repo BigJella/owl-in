@@ -4,12 +4,16 @@ export interface LobbyState {
   playersOnline: number;
   /** Humans seated or waiting at any poker table. */
   pokerPlayers: number;
+  /** Humans at any blackjack table. */
+  blackjackPlayers: number;
 }
 
 export interface Session {
   name: string;
   bankroll: number;
   roomId: string | null;
+  /** Which game `roomId` belongs to. */
+  game: GameType | null;
 }
 
 export type AckResult<T = object> = ({ ok: true } & T) | { ok: false; error: string };

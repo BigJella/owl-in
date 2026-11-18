@@ -1,4 +1,5 @@
 import type { PokerAction, PokerRoomSummary, PokerStateMessage } from "./poker";
+import type { BlackjackAction, BlackjackRoomSummary, BlackjackStateMessage } from "./blackjack";
 import type { Ack, LobbyState, Session } from "./types";
 
 /**
@@ -16,6 +17,17 @@ export interface ClientToServerEvents {
   "poker:ready": () => void;
   "poker:rebuy": (amount: number, ack: Ack) => void;
   "poker:act": (action: PokerAction) => void;
+  "blackjack:subscribe-rooms": () => void;
+  "blackjack:unsubscribe-rooms": () => void;
+  "blackjack:create": (request: { name: string; minBet: number }, ack: Ack<{ roomId: string }>) => void;
+  "blackjack:join": (request: { roomId: string }, ack: Ack<{ roomId: string }>) => void;
+  "blackjack:leave": () => void;
+  "blackjack:bet": (request: { spot: number; amount: number }, ack: Ack) => void;
+  "blackjack:clear-bet": (spot: number) => void;
+  "blackjack:rebet": (ack: Ack) => void;
+  "blackjack:ready": () => void;
+  "blackjack:insurance": (take: boolean) => void;
+  "blackjack:act": (action: BlackjackAction) => void;
 }
 
 /** Events the server sends. */
@@ -25,5 +37,8 @@ export interface ServerToClientEvents {
   "poker:rooms": (rooms: PokerRoomSummary[]) => void;
   "poker:state": (message: PokerStateMessage) => void;
   "poker:left": () => void;
+  "blackjack:rooms": (rooms: BlackjackRoomSummary[]) => void;
+  "blackjack:state": (message: BlackjackStateMessage) => void;
+  "blackjack:left": () => void;
   "error-message": (message: string) => void;
 }
