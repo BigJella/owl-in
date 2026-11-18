@@ -77,6 +77,35 @@ describe("betting", () => {
     r.close();
   });
 
+  it("lets you give up a spot: now while betting, else after the round", async () => {
+    const r = room();
+    const a = human();
+    const b = human();
+    r.join(a.player);
+    r.join(b.player);
+    for (const spot of [3, 4, 5]) r.bet(a.player, spot, 10);
+    expect(r.bet(b.player, 6, 10)).toBeNull();
+    // During betting: freed at once, bet refunded.
+    expect(r.leaveSpot(a.player, 5)).toBeNull();
+    expect(r.ownedSpots(a.player)).toEqual([3, 4]);
+    expect(a.player.bankroll).toBe(STARTING_BANKROLL - 20);
+    r.setReady(a.player);
+    r.setReady(b.player);
+    await vi.advanceTimersByTimeAsync(r.timing.gapMs + 5);
+    expect(r.stage()).not.toBe("betting");
+    // Mid-round: the spot plays out and is freed when the round ends.
+    expect(r.leaveSpot(a.player, 4)).toBeNull();
+    expect(r.ownedSpots(a.player)).toEqual([3, 4]);
+    expect(r.viewFor(b.player.id).spots[4]!.releasing).toBe(true);
+    for (let i = 0; i < 200 && r.stage() !== "betting"; i += 1) {
+      for (const p of [a.player, b.player]) if (r.viewFor(p.id).myLegal) r.submitAction(p, "stand");
+      await vi.advanceTimersByTimeAsync(250);
+    }
+    expect(r.ownedSpots(a.player)).toEqual([3]);
+    expect(r.bet(b.player, 4, 10)).toBeNull(); // someone else can sit there now
+    r.close();
+  });
+
   it("won't let you take another human's spot", () => {
     const r = room();
     const a = human();
@@ -120,8 +149,8 @@ describe("playing", () => {
     const h = human();
     r.join(h.player);
     for (const spot of [0, 1, 2]) r.bet(h.player, spot, 10);
-    r.clearBet(h.player, 1);
-    r.clearBet(h.player, 2);
+    r.leaveSpot(h.player, 1);
+    r.leaveSpot(h.player, 2);
     r.setReady(h.player);
     await vi.advanceTimersByTimeAsync(r.timing.gapMs + 5);
     const dealt = h.messages.find((m) => m.events.some((e) => e.type === "roundStarted"))!;
@@ -135,8 +164,8 @@ describe("playing", () => {
     const { player, messages } = human();
     r.join(player);
     for (const spot of [0, 1, 2]) r.bet(player, spot, 10);
-    r.clearBet(player, 1);
-    r.clearBet(player, 2);
+    r.leaveSpot(player, 1);
+    r.leaveSpot(player, 2);
     r.setReady(player);
     await vi.advanceTimersByTimeAsync(r.timing.gapMs + 30_000 + 10_000);
     const acted = messages.flatMap((m) => m.events).filter((e) => e.type === "playerActed" && e.spot === 0);
@@ -150,8 +179,8 @@ describe("playing", () => {
     const { player } = human();
     r.join(player);
     for (const spot of [0, 1, 2]) r.bet(player, spot, 10);
-    r.clearBet(player, 1);
-    r.clearBet(player, 2);
+    r.leaveSpot(player, 1);
+    r.leaveSpot(player, 2);
     r.setReady(player);
     const turnBank = async () => {
       await vi.advanceTimersByTimeAsync(1); // let the previous action land
@@ -209,7 +238,7 @@ describe("betting on the time bank", () => {
   }
 
   it("keeps bets open past the window while last round's players spend their bank", async () => {
-    const r = room();
+    const r = room({ table: rigged("10 10 10 10 7 7 7 7 7 7") }); // everyone 17: no blackjacks, so we always get a turn
     const { player } = human();
     r.join(player);
     await playOneRound(r, player);
@@ -235,7 +264,7 @@ describe("betting on the time bank", () => {
   });
 
   it("closes once the bank runs dry (and the spot is given up if there's no bet)", async () => {
-    const r = room();
+    const r = room({ table: rigged("10 10 10 10 7 7 7 7 7 7") });
     const { player } = human();
     r.join(player);
     await playOneRound(r, player);
@@ -271,8 +300,8 @@ describe("payouts and the shoe", () => {
     const { player } = human();
     r.join(player);
     for (const spot of [0, 1, 2]) r.bet(player, spot, 100);
-    r.clearBet(player, 1);
-    r.clearBet(player, 2);
+    r.leaveSpot(player, 1);
+    r.leaveSpot(player, 2);
     r.setReady(player);
     const afterBet = player.bankroll;
     await vi.advanceTimersByTimeAsync(r.timing.gapMs + 5);

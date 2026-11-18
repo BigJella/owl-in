@@ -221,6 +221,9 @@ export function BlackjackTablePage({ onLeave, playerName }: { onLeave: () => voi
               />
             )}
             {view && myTurn && <PlayPanel view={view} />}
+            {view && view.stage !== "betting" && view.mySpots.length > 1 && view.leaveMode !== "queued" && (
+              <SpotRelease view={view} />
+            )}
             {view && !myTurn && myHands && view.stage === "playing" && (
               <p className="muted waiting-note">
                 {actingSpot ? `Waiting for ${actingSpot.name}…` : "Dealer's turn…"}
@@ -380,10 +383,11 @@ function BetPanel(props: {
       <div className="bet-actions three">
         <button
           className="action"
-          disabled={!mine || currentBet === 0}
-          onClick={() => selected !== null && socket.emit("blackjack:clear-bet", selected)}
+          disabled={!mine}
+          title={currentBet > 0 ? "Take the bet back and free the spot" : "Free the spot"}
+          onClick={() => selected !== null && socket.emit("blackjack:leave-spot", selected)}
         >
-          Clear
+          Leave spot
         </button>
         <button
           className="action"
@@ -425,6 +429,33 @@ function InsurancePanel({ cost, hands, blackjack }: { cost: number; hands: numbe
         <button className="action raise amount-btn" onClick={() => socket.emit("blackjack:insurance", true)}>
           Insure {fmt(cost)}
         </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Outside betting: give up some of your spots (freed when the round ends) without leaving the table.
+ * Only shown when you hold more than one; to drop your last spot, just don't bet on it (or leave the table).
+ */
+function SpotRelease({ view }: { view: BlackjackTableView }) {
+  return (
+    <div className="spot-release">
+      <small>Free a spot after this round</small>
+      <div className="spot-release-row">
+        {view.mySpots.map((spot) => {
+          const releasing = view.spots[spot]?.releasing ?? false;
+          return (
+            <button
+              key={spot}
+              className="action"
+              disabled={releasing}
+              onClick={() => socket.emit("blackjack:leave-spot", spot)}
+            >
+              {releasing ? `Spot ${spot + 1} freed` : `Spot ${spot + 1}`}
+            </button>
+          );
+        })}
       </div>
     </div>
   );

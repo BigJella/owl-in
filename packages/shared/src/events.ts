@@ -23,7 +23,8 @@ export interface ClientToServerEvents {
   "blackjack:join": (request: { roomId: string }, ack: Ack<{ roomId: string }>) => void;
   "blackjack:leave": () => void;
   "blackjack:bet": (request: { spot: number; amount: number }, ack: Ack) => void;
-  "blackjack:clear-bet": (spot: number) => void;
+  /** Give up a spot: now during betting (bet refunded), else once the round ends. */
+  "blackjack:leave-spot": (spot: number) => void;
   "blackjack:rebet": (ack: Ack) => void;
   "blackjack:ready": () => void;
   "blackjack:insurance": (take: boolean) => void;

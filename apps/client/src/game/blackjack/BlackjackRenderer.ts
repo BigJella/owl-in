@@ -132,6 +132,8 @@ export class BlackjackRenderer {
   private selected: number | null = null;
   /** Short-lived per-spot action text ("Hit", "Double $50"), cleared at the next round. */
   private notes: string[] = Array(BJ_SPOTS).fill("");
+  /** This round's net result per spot (all hands + insurance), for the label under the plate. */
+  private net: { amount: number; blackjack: boolean; settled: boolean }[] = this.freshNet();
 
   constructor(
     private readonly app: Application,
@@ -221,6 +223,7 @@ export class BlackjackRenderer {
         case "roundStarted":
           tl.call(() => {
             this.notes.fill("");
+            this.net = this.freshNet();
             this.model.dealer = [];
             this.model.spots.forEach((s, i) => {
               s.hands = [];
@@ -304,6 +307,12 @@ export class BlackjackRenderer {
         case "insuranceSettled":
           for (const r of e.results) {
             if (r.payout > 0) this.chipFly(tl, DEALER_CHIP, this.nodes[r.spot]!.geom.plate, 0.35);
+            if (r.stake > 0) {
+              tl.call(() => {
+                this.net[r.spot]!.amount += r.payout - r.stake;
+                this.setNote(r.spot, r.payout > 0 ? `Insurance won ${fmt(r.payout - r.stake)}` : `Insurance lost ${fmt(r.stake)}`);
+              });
+            }
           }
           break;
 
@@ -326,15 +335,14 @@ export class BlackjackRenderer {
           });
           if (e.result === "lose") this.chipFly(tl, node.geom.box, DEALER_CHIP, 0.3);
           else if (e.payout > e.bet) this.chipFly(tl, DEALER_CHIP, node.geom.box, 0.3);
-          if (e.payout > 0) {
-            this.chipFly(tl, node.geom.box, node.geom.plate, 0.25);
-            const won = e.payout - e.bet;
-            const note =
-              e.result === "blackjack" ? `Blackjack +${fmt(won)}` : won > 0 ? `+${fmt(won)}` : e.result === "push" ? "Push" : `${fmt(e.payout)} back`;
-            tl.call(() => this.setNote(e.spot, note));
-          } else {
-            tl.call(() => this.setNote(e.spot, `-${fmt(e.bet)}`));
-          }
+          if (e.payout > 0) this.chipFly(tl, node.geom.box, node.geom.plate, 0.25);
+          tl.call(() => {
+            const net = this.net[e.spot]!;
+            net.amount += e.payout - e.bet;
+            net.blackjack ||= e.result === "blackjack";
+            net.settled = true;
+            this.setNote(e.spot, this.netLabel(net));
+          });
           break;
         }
 
@@ -599,6 +607,17 @@ export class BlackjackRenderer {
     }
   }
 
+  private freshNet() {
+    return Array.from({ length: BJ_SPOTS }, () => ({ amount: 0, blackjack: false, settled: false }));
+  }
+
+  /** "Won $10", "Lost $20", "Push", "Blackjack · won $15": the spot's total for the round. */
+  private netLabel(net: { amount: number; blackjack: boolean }): string {
+    if (net.amount > 0) return `${net.blackjack ? "Blackjack · won" : "Won"} ${fmt(net.amount)}`;
+    if (net.amount < 0) return `Lost ${fmt(-net.amount)}`;
+    return "Push";
+  }
+
   private setNote(spot: number, text: string) {
     this.notes[spot] = text;
   }
@@ -652,9 +671,14 @@ export class BlackjackRenderer {
         node.note.style.fill = color;
         return;
       }
-      const status = !s.connected ? "AWAY" : s.leaving ? "LAST ROUND" : s.ready === true ? "✓ READY" : "";
+      const status = !s.connected ? "AWAY" : s.leaving || s.releasing ? "LAST ROUND" : s.ready === true ? "✓ READY" : "";
       node.note.text = this.notes[spot] || status;
-      node.note.style.fill = !s.connected || s.leaving ? DANGER : /^(\+|Blackjack)/.test(this.notes[spot] ?? "") || s.ready ? GOLD : TEXT;
+      const note = this.notes[spot] ?? "";
+      node.note.style.fill = /^(Lost|Insurance lost)/.test(note) || (!note && (!s.connected || s.leaving || s.releasing))
+        ? DANGER
+        : /^(Won|Blackjack|Insurance won)/.test(note) || (!note && s.ready)
+          ? GOLD
+          : TEXT;
     });
   };
 

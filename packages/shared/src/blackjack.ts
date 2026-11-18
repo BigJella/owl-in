@@ -79,6 +79,8 @@ export interface BlackjackSpotView {
   connected: boolean;
   /** Leaving once this round ends. */
   leaving: boolean;
+  /** The player is giving up this spot once this round ends. */
+  releasing: boolean;
 }
 
 export interface BlackjackTableView {

@@ -95,6 +95,8 @@ interface Member {
   leaving: boolean;
   disconnectedAt: number | null;
   lastBets: { spot: number; amount: number }[];
+  /** Spots this player gives up when the current round ends. */
+  releasing: Set<number>;
 }
 
 type Owner = HumanPlayer | BlackjackBot;
@@ -187,6 +189,7 @@ export class BlackjackRoom {
       leaving: false,
       disconnectedAt: null,
       lastBets: [],
+      releasing: new Set(),
     });
     // A bot-only table waiting out its interval opens bets right away for the newcomer.
     if (!this.bettingOpen && this.table.canBet && this.turn === null) this.scheduleRound([]);
@@ -274,16 +277,23 @@ export class BlackjackRoom {
     return null;
   }
 
-  /** Take your bet back and give up the spot. */
-  clearBet(player: HumanPlayer, spot: number): string | null {
-    if (!this.bettingOpen || !this.table.canBet) return "Bets are closed.";
-    if (this.owners[spot] !== player) return "That's not your spot.";
-    this.refund(spot);
-    this.owners[spot] = null;
+  /**
+   * Give up one of your spots (e.g. to make room for someone). While bets are open it's immediate and the bet is
+   * refunded; otherwise the spot plays out this round and is freed when the round ends.
+   */
+  leaveSpot(player: HumanPlayer, spot: number): string | null {
     const member = this.members.get(player.id);
-    if (member && this.ownedSpots(player).length === 0) member.ready = false;
-    player.sendSession();
-    this.checkBettingDone();
+    if (!member || this.owners[spot] !== player) return "That's not your spot.";
+    if (this.bettingOpen && this.table.canBet) {
+      this.refund(spot);
+      this.owners[spot] = null;
+      member.releasing.delete(spot);
+      if (this.ownedSpots(player).length === 0) member.ready = false;
+      player.sendSession();
+      this.checkBettingDone();
+    } else {
+      member.releasing.add(spot);
+    }
     this.broadcast([]);
     this.changed();
     return null;
@@ -567,7 +577,14 @@ export class BlackjackRoom {
   /** Round over: drop players who asked to leave, sweep the cards, start the next round. */
   private finishRound() {
     this.timer = null;
-    for (const member of [...this.members.values()]) if (member.leaving) this.removeMember(member, true);
+    for (const member of [...this.members.values()]) {
+      if (member.leaving) {
+        this.removeMember(member, true);
+        continue;
+      }
+      for (const spot of member.releasing) if (this.owners[spot] === member.player) this.owners[spot] = null;
+      member.releasing.clear();
+    }
     const events = this.table.clearTable();
     this.scheduleRound(events);
   }
@@ -724,6 +741,7 @@ export class BlackjackRoom {
         ready: ownerMember && this.bettingOpen ? ownerMember.ready : null,
         connected: ownerMember ? ownerMember.disconnectedAt === null : true,
         leaving: ownerMember?.leaving ?? false,
+        releasing: ownerMember?.releasing.has(spot) ?? false,
       };
     });
 

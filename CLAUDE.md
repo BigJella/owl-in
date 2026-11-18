@@ -241,6 +241,11 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
   hand or spot), **capped at 60s**, auto-stand at 0 (`BJ_TURN_REFILL_MS`, `BJ_DECISION_REFILL_MS`, `BJ_TIME_BANK_MAX_MS`). Bots think 0.8–1.6s. Results stay up 3s (after their animation),
   then cards are swept to the tray. Bot-only tables deal one round per 20s.
 - Spots you didn't bet on are released when betting closes. Rebet repeats last round's bets.
+- **Giving up a spot** (`blackjack:leave-spot`, e.g. to scale down so others can sit): during betting it's immediate and
+  the bet is refunded ("Leave spot" in the bet panel); mid-round the spot plays out and is freed when the round ends
+  (the "Free a spot after this round" row, shown when you hold 2+ spots; the seat shows LAST ROUND).
+- The label under each seat after a round is the spot's **net** for the round across all its hands and insurance:
+  "Won $10" (profit, not payout), "Lost $20", "Push", "Blackjack · won $15".
 - Leaving: between rounds it's immediate (pre-deal bets refunded). With hands in play it's queued ("Leave after this round"
   dialog) and you're removed when the round ends. **No rejoin lockout in blackjack.** Disconnected players' hands auto-stand;
   after 60s away they're removed at the next betting round.
@@ -268,7 +273,7 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
 - [x] Shared fixed-grid table strip (identical for all players, no shifting); sidebar with static info top / controls bottom;
       time bank + "+20s next turn" preview between turns
 - [x] Git repo on `main` (history: initial commit → UI rework → UI improvements → sidebar → table/sidebar polish)
-- [x] Tests: 70 Vitest tests (poker + blackjack engines, rooms with fake timers incl. soaks); `scripts/bots.mjs` and
+- [x] Tests: 71 Vitest tests (poker + blackjack engines, rooms with fake timers incl. soaks); `scripts/bots.mjs` and
       `scripts/blackjack-bots.mjs` e2e
 - [x] Blackjack: engine (shoe, S17, 3:2, double/split/insurance/late surrender), BlackjackRoom (spots, bot fill 1–3,
       betting window, insurance, time bank), lobby + table page + Pixi renderer (shoe/tray levels, deal/flip/payout/sweep/shuffle

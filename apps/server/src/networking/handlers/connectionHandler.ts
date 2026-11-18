@@ -229,12 +229,12 @@ export function registerConnection(socket: GameSocket, { registry, rooms, blackj
     reply(ack, error ? { ok: false, error } : { ok: true });
   });
 
-  socket.on("blackjack:clear-bet", (spot) => {
+  socket.on("blackjack:leave-spot", (spot) => {
     if (!player) return;
     const parsed = z.number().int().min(0).max(6).safeParse(spot);
     const room = blackjack.roomOf(player);
     if (!room || !parsed.success) return;
-    const error = room.clearBet(player, parsed.data);
+    const error = room.leaveSpot(player, parsed.data);
     if (error) player.sendError(error);
   });
 
