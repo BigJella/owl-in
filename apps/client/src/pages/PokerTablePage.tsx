@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { formatDD, STAGE_LABEL, type PokerTableView } from "@owl-in/shared";
+import { formatDD, STAGE_LABEL, TIME_BANK_MAX_MS, TIME_BANK_REFILL_MS, type PokerTableView } from "@owl-in/shared";
 import { socket } from "../networking/socket";
 import { usePokerState, type ReceivedMessage } from "../networking/pokerStore";
 import { PokerScene } from "../game/poker/PokerScene";
@@ -169,34 +169,41 @@ export function PokerTablePage({ onLeave, cashedOut = false }: { onLeave: () => 
         <PokerScene />
 
         <aside className="player-panel" aria-label="Your seat">
-          <div className="panel-head">
-            <small>You</small>
-            <strong>{me?.name ?? "Waiting for a seat"}</strong>
-            <div className="panel-tags">
-              {view?.leaveMode === "queued" && !cashedOut && <span className="tag danger">Last hand</span>}
-              {view?.amWaiting && <span className="tag">Seated next hand</span>}
-              {me?.status === "waiting" && <span className="tag">Dealt in next hand</span>}
-              {me?.status === "folded" && view?.phase !== "idle" && <span className="tag">Folded</span>}
-              {me?.status === "allIn" && <span className="tag gold">All-in</span>}
+          {/* Static info: always in the same place, so nothing above jumps as controls come and go. */}
+          <div className="panel-info">
+            <div className="panel-head">
+              <small>You</small>
+              <strong>{me?.name ?? "Waiting for a seat"}</strong>
+              <div className="panel-tags">
+                {view?.leaveMode === "queued" && !cashedOut && <span className="tag danger">Last hand</span>}
+                {view?.amWaiting && <span className="tag">Seated next hand</span>}
+                {me?.status === "waiting" && <span className="tag">Dealt in next hand</span>}
+                {me?.status === "folded" && view?.phase !== "idle" && <span className="tag">Folded</span>}
+                {me?.status === "allIn" && <span className="tag gold">All-in</span>}
+              </div>
             </div>
+
+            {me && (
+              <div className="panel-stats">
+                <div>
+                  <small>Stack</small>
+                  <strong className="gold">{fmt(me.stack)}</strong>
+                </div>
+                <div>
+                  <small>In pot</small>
+                  <strong>{fmt(me.contributed)}</strong>
+                </div>
+              </div>
+            )}
+
+            {clock && <ClockBlock clock={clock} />}
           </div>
 
-          {me && (
-            <div className="panel-stats">
-              <div>
-                <small>Stack</small>
-                <strong className="gold">{fmt(me.stack)}</strong>
-              </div>
-              <div>
-                <small>In pot</small>
-                <strong>{fmt(me.contributed)}</strong>
-              </div>
-            </div>
-          )}
-
-          {clock && <ClockBlock clock={clock} />}
-
-          <div className="panel-actions">
+          {/* Controls: anchored to the bottom of the sidebar. */}
+          <div className="panel-controls">
+            {view && !cashedOut && me && view.myLegalActions === null && view.phase !== "idle" && acting !== null && (
+              <p className="muted waiting-note">Waiting for {actingName}…</p>
+            )}
             {cashedOut && (
               <div className="ready-panel">
                 <div>
@@ -208,26 +215,22 @@ export function PokerTablePage({ onLeave, cashedOut = false }: { onLeave: () => 
                 </button>
               </div>
             )}
-            {view && !cashedOut && <ActionBar view={view} />}
             {view && !cashedOut && view.readyGraceRemainingMs !== null && <ReadyPanel view={view} clock={clock} />}
-            {view && !cashedOut && me && view.myLegalActions === null && view.phase !== "idle" && acting !== null && (
-              <p className="muted waiting-note">Waiting for {actingName}…</p>
-            )}
+            {view && !cashedOut && <ActionBar view={view} />}
+            <button
+              className="secondary cashout"
+              onClick={() => (cashedOut ? onLeave() : setConfirmLeave(true))}
+              disabled={!cashedOut && view?.leaveMode === "queued"}
+            >
+              {cashedOut
+                ? "Back to lobby"
+                : view?.leaveMode === "queued"
+                  ? "Cashing out after this hand"
+                  : view?.leaveMode === "after-hand"
+                    ? "Cash out after this hand"
+                    : "Cash out"}
+            </button>
           </div>
-
-          <button
-            className="secondary cashout"
-            onClick={() => (cashedOut ? onLeave() : setConfirmLeave(true))}
-            disabled={!cashedOut && view?.leaveMode === "queued"}
-          >
-            {cashedOut
-              ? "Back to lobby"
-              : view?.leaveMode === "queued"
-                ? "Cashing out after this hand"
-                : view?.leaveMode === "after-hand"
-                  ? "Cash out after this hand"
-                  : "Cash out"}
-          </button>
         </aside>
       </div>
 
@@ -249,7 +252,10 @@ export function PokerTablePage({ onLeave, cashedOut = false }: { onLeave: () => 
   );
 }
 
-/** Your clock, big: turn countdown, ready-up grace/drain, rebuy decision, or banked time. */
+/**
+ * Your clock, big. Always the same height (label / number / note) so the sidebar never jumps.
+ * Between your turns it shows your banked time plus a greyed "+Ns next turn" refill preview.
+ */
 function ClockBlock({ clock }: { clock: Clock }) {
   const label = {
     rebuy: "Meal plan empty",
@@ -260,11 +266,26 @@ function ClockBlock({ clock }: { clock: Clock }) {
   }[clock.kind];
   const urgent = clock.kind === "rebuy" || clock.kind === "draining" || (clock.kind === "turn" && clock.seconds <= 5);
   const live = clock.kind !== "bank";
+  // Each turn adds TIME_BANK_REFILL_MS, capped at TIME_BANK_MAX_MS.
+  const refill =
+    clock.kind === "bank"
+      ? Math.max(0, Math.min(TIME_BANK_REFILL_MS, TIME_BANK_MAX_MS - clock.seconds * 1000)) / 1000
+      : null;
+  const note = {
+    rebuy: "Reload or cash out",
+    turn: "Auto check / fold at 0",
+    grace: `Then your bank (${clock.kind === "grace" ? clock.bank : 0}s) drains`,
+    draining: "Ready up to stop the drain",
+    bank: "Refills when it's your turn",
+  }[clock.kind];
   return (
     <div className={`clock-block ${urgent ? "urgent" : live ? "live" : ""}`}>
       <small>{label}</small>
-      <strong>{clock.seconds}s</strong>
-      {clock.kind === "grace" && <em>then your bank ({clock.bank}s) drains</em>}
+      <div className="clock-row">
+        <strong>{clock.seconds}s</strong>
+        {refill !== null && <span className="clock-refill">{refill > 0 ? `+${refill}s next turn` : "Max banked"}</span>}
+      </div>
+      <em>{note}</em>
     </div>
   );
 }
@@ -351,7 +372,7 @@ function RebuyDialog(props: {
           <button type="button" className="secondary" onClick={onLeave}>
             Cash out
           </button>
-          <button className="primary" disabled={!affordable}>
+          <button className="primary amount-btn" disabled={!affordable}>
             Reload {fmt(amount)}
           </button>
         </div>

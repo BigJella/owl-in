@@ -264,10 +264,13 @@ input[type=range] { accent-color: var(--gold); width: 100%; }
 
 /* Player sidebar: everything that's yours */
 .player-panel {
-  display: flex; flex-direction: column; gap: 14px; padding: 16px; margin: 12px 16px 16px 0;
+  display: flex; flex-direction: column; justify-content: space-between; gap: 14px; padding: 16px; margin: 12px 16px 16px 0;
   background: var(--surface); border: 1px solid var(--line); border-top: 2px solid var(--gold);
   overflow-y: auto; min-height: 0;
 }
+/* Static info on top, controls anchored to the bottom. */
+.panel-info { display: flex; flex-direction: column; gap: 14px; flex: none; }
+.panel-controls { display: flex; flex-direction: column; gap: 10px; margin-top: auto; flex: none; }
 .panel-head { display: flex; flex-direction: column; gap: 4px; }
 .panel-head small, .panel-stats small, .clock-block small {
   color: var(--muted); font-family: var(--display); font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
@@ -279,16 +282,23 @@ input[type=range] { accent-color: var(--gold); width: 100%; }
 .panel-stats > div { padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
 .panel-stats > div + div { border-left: 1px solid var(--line); }
 .panel-stats strong { font-family: var(--display); font-size: 24px; font-weight: 600; }
-.clock-block { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 1px solid var(--line); background: var(--black); }
+.clock-block {
+  display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 10px 12px; min-height: 104px;
+  border: 1px solid var(--line); background: var(--black);
+}
+.clock-row { display: flex; align-items: baseline; gap: 10px; }
+.clock-refill { color: #4a4a4a; font-family: var(--display); font-size: 15px; font-weight: 500; letter-spacing: .5px; }
 .clock-block strong { font-family: var(--display); font-size: 34px; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }
-.clock-block em { font-style: normal; color: var(--muted); font-size: 12px; }
+.clock-block em { font-style: normal; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .clock-block.live { border-color: var(--gold); }
 .clock-block.live strong { color: var(--gold); }
 .clock-block.urgent { border-color: var(--danger); background: var(--danger-bg); }
 .clock-block.urgent strong { color: var(--danger); }
-.panel-actions { display: flex; flex-direction: column; gap: 10px; }
+
 .waiting-note { margin: 0; font-size: 14px; }
-.cashout { margin-top: auto; width: 100%; flex: none; }
+.cashout { width: 100%; flex: none; }
+/* Buttons whose label contains a changing amount: fixed width + fixed-width digits so they never resize. */
+.amount-btn { min-width: 230px; font-variant-numeric: tabular-nums; }
 
 /* Action controls (vertical, in the sidebar) */
 .action-bar { display: flex; flex-direction: column; gap: 8px; }
@@ -331,10 +341,10 @@ input[type=range] { accent-color: var(--gold); width: 100%; }
   .poker-canvas { width: 100%; aspect-ratio: 5 / 3; }
   .player-panel { margin: 0 10px 10px; gap: 10px; overflow: visible; }
   /* Actions first on small screens so Fold / Check are always on screen. */
-  .panel-actions { order: -1; }
+  .panel-controls { order: -1; margin-top: 0; }
   .panel-head { flex-direction: row; align-items: center; flex-wrap: wrap; gap: 8px; }
   .panel-head strong { font-size: 17px; }
-  .clock-block { flex-direction: row; align-items: baseline; gap: 10px; }
+  .clock-block { min-height: 0; }
   .clock-block strong { font-size: 24px; }
 }
 

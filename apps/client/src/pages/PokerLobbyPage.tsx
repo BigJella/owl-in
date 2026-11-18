@@ -193,7 +193,7 @@ function BuyInDialog({ session, room, onClose }: { session: Session; room: Poker
           <p className="form-error">You need at least {fmt(min)} in Dining Dollars for this table.</p>
         )}
         {error && <p className="form-error">{error}</p>}
-        <button className="primary" disabled={!affordable}>Sit down with {fmt(buyIn)}</button>
+        <button className="primary amount-btn" disabled={!affordable}>Sit down with {fmt(buyIn)}</button>
       </form>
     </Modal>
   );
