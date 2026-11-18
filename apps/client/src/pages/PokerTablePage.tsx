@@ -80,7 +80,9 @@ function TableStrip({ received, now }: { received: ReceivedMessage; now: number 
 
   return (
     <header className="table-strip" aria-label="Table information">
-      <div className="strip-cell strip-title">{view.name}</div>
+      <div className="strip-cell strip-title" title={view.name}>
+        {view.name}
+      </div>
       <div className="strip-cell">
         <small>Blinds</small>
         <span>{fmt(view.smallBlind)}/{fmt(view.bigBlind)}</span>
@@ -95,7 +97,7 @@ function TableStrip({ received, now }: { received: ReceivedMessage; now: number 
       </div>
       <div className="strip-cell">
         <small>Pot</small>
-        <span className="gold">
+        <span className="gold" title={view.pots.map((p, i) => `${i === 0 ? "Main" : `Side ${i}`} ${fmt(p.amount)}`).join(", ")}>
           {fmt(pot)}
           {view.pots.length > 1 && (
             <em className="strip-sub">
@@ -107,11 +109,11 @@ function TableStrip({ received, now }: { received: ReceivedMessage; now: number 
       </div>
       <div className="strip-cell">
         <small>Dealer</small>
-        <span>{view.handId > 0 ? nameOf(view.button) : "—"}</span>
+        <span title={view.handId > 0 ? nameOf(view.button) : undefined}>{view.handId > 0 ? nameOf(view.button) : "—"}</span>
       </div>
       <div className="strip-cell">
         <small>SB / BB</small>
-        <span>
+        <span title={`${nameOf(sb)} / ${nameOf(bb)}`}>
           {nameOf(sb)} / {nameOf(bb)}
         </span>
       </div>

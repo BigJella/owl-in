@@ -16,7 +16,11 @@ const BOARD_W = 66;
 const BOARD_H = 94;
 /** Where dealt cards fly from: the top edge of the table, clear of the stage label. */
 const DECK = { x: CX, y: CY - 215 };
-const POT = { x: CX, y: CY + 78 };
+/** Board row sits just below centre; the pot sits above it (or dead centre before any board cards). */
+const BOARD_Y = CY + 30;
+const POT_Y_BOARD = CY - 62;
+const POT_Y_EMPTY = CY;
+const SIDE_POT_GAP = 26;
 const FONT = '"Oswald", "Inter", system-ui, sans-serif';
 /** KSU gold (Pantone 1235 C). */
 const GOLD = 0xffb81c;
@@ -91,7 +95,10 @@ export class PokerRenderer {
   private readonly dealerButton = new Container();
 
   private view: PokerTableView | null = null;
-  private rotationSeat: number | null | undefined = undefined;
+  /** mySeat + occupied seats the current layout was built for; relayout when it changes. */
+  private layoutKey = "";
+  /** Where chips fly to / the pot label sits. Moves with the board. */
+  private potPos: Point = { x: CX, y: POT_Y_EMPTY };
   private stacks: number[] = Array(SEATS).fill(0);
   private bets: number[] = Array(SEATS).fill(0);
   private contributed: number[] = Array(SEATS).fill(0);
@@ -108,15 +115,15 @@ export class PokerRenderer {
   ) {
     this.drawFelt();
     this.potChip = this.makeChip();
-    this.potChip.position.set(POT.x, POT.y);
+    this.potChip.position.set(this.potPos.x, this.potPos.y);
     this.potText.anchor.set(0, 0.5);
-    this.potText.y = POT.y;
-    this.sidePotText.position.set(CX, POT.y + 28);
+    this.potText.y = this.potPos.y;
+    this.sidePotText.position.set(CX, this.potPos.y + SIDE_POT_GAP);
     this.potText.style.letterSpacing = 1;
 
     for (let i = 0; i < 5; i += 1) {
       const card = this.makeCard(BOARD_W, BOARD_H);
-      card.position.set(CX + (i - 2) * (BOARD_W + 8), CY - 6);
+      card.position.set(CX + (i - 2) * (BOARD_W + 8), BOARD_Y);
       this.board.push(card);
       this.cardsLayer.addChild(card);
     }
@@ -142,7 +149,7 @@ export class PokerRenderer {
       this.handsLayer,
     );
     this.app.stage.addChild(this.root);
-    this.layoutSeats(0);
+    this.layoutSeats(null, this.seats.map((_, i) => i));
     this.app.renderer.on("resize", this.fit);
     this.app.ticker.add(this.tick);
     this.fit(this.app.screen.width, this.app.screen.height);
@@ -181,9 +188,13 @@ export class PokerRenderer {
     const next = this.queue.shift();
     if (!next) return;
     const { view, events } = next.message;
-    if (view.mySeat !== this.rotationSeat) {
-      this.rotationSeat = view.mySeat;
-      this.layoutSeats(view.mySeat ?? 0);
+    // Seats only change between hands, so relayout here, before this message's animation is built
+    // (its tweens read seat positions when they're created).
+    const occupied = view.seats.flatMap((s, i) => (s ? [i] : []));
+    const key = `${view.mySeat}|${occupied.join(",")}`;
+    if (key !== this.layoutKey) {
+      this.layoutKey = key;
+      this.layoutSeats(view.mySeat, occupied);
     }
     if (events.length === 0 || !this.view) {
       this.sync(view);
@@ -281,7 +292,7 @@ export class PokerRenderer {
               this.refreshChips(seat);
             }
           });
-          if (chips.length) tl.to(chips, { x: POT.x, y: POT.y, duration: 0.35, ease: "power2.in", stagger: 0.03 });
+          if (chips.length) tl.to(chips, { x: this.potPos.x, y: this.potPos.y, duration: 0.35, ease: "power2.in", stagger: 0.03 });
           tl.call(() => {
             for (const chip of chips) chip.destroy();
             this.setPots(e.pots);
@@ -291,6 +302,7 @@ export class PokerRenderer {
 
         case "communityDealt": {
           const start = { preflop: 0, flop: 0, turn: 3, river: 4 }[e.street];
+          tl.call(() => this.placePot(true, true));
           tl.call(() => {
             for (const node of this.seats) {
               if (node.action.text !== "Fold" && !node.action.text.startsWith("All-in")) node.action.text = "";
@@ -318,7 +330,7 @@ export class PokerRenderer {
           for (const winner of e.winners) {
             this.chipMove(
               tl,
-              POT,
+              this.potPos,
               g(winner.seat).plate,
               () => {
                 this.stacks[winner.seat] = this.stacks[winner.seat]! + winner.amount;
@@ -473,10 +485,23 @@ export class PokerRenderer {
       sprite.height = BOARD_H;
     });
 
+    this.placePot(view.community.length > 0);
     this.setPots(view.pots);
     const buttonSeat = view.seats[view.button] ? view.button : null;
     this.dealerButton.visible = view.handId > 0 && buttonSeat !== null;
     if (buttonSeat !== null) this.dealerButton.position.copyFrom(this.seats[buttonSeat]!.geom.button);
+  }
+
+  /** Pot sits at the table's centre, or above the board once community cards are out. */
+  private placePot(hasBoard: boolean, animate = false) {
+    const y = hasBoard ? POT_Y_BOARD : POT_Y_EMPTY;
+    if (y === this.potPos.y) return;
+    this.potPos = { x: CX, y };
+    const move = (target: { y: number }, to: number) =>
+      animate ? gsap.to(target, { y: to, duration: 0.3, ease: "power2.out" }) : (target.y = to);
+    move(this.potChip, y);
+    move(this.potText, y);
+    move(this.sidePotText, y + SIDE_POT_GAP);
   }
 
   /** Who sits where (names, bot badges, which plates exist), without touching cards or chips. */
@@ -514,6 +539,7 @@ export class PokerRenderer {
     this.contributed.fill(0);
     this.seats.forEach((_, seat) => this.refreshChips(seat));
     for (const card of this.board) card.visible = false;
+    this.placePot(false);
     this.setPots([]);
   }
 
@@ -551,7 +577,7 @@ export class PokerRenderer {
     // Centre chip + label together as one unit on the table.
     const gap = 8;
     const width = 24 + gap + this.potText.width;
-    this.potChip.x = POT.x - width / 2 + 12;
+    this.potChip.x = this.potPos.x - width / 2 + 12;
     this.potText.x = this.potChip.x + 12 + gap;
     this.sidePotText.text =
       this.pots.length > 1
@@ -607,11 +633,17 @@ export class PokerRenderer {
       .stroke({ width: 1, color: 0x262626 });
   }
 
-  /** Seat positions rotate so your own seat is always bottom-centre. */
-  private layoutSeats(anchorSeat: number) {
-    this.seats.forEach((node, seat) => {
-      const displayIndex = (seat - anchorSeat + SEATS) % SEATS;
-      const angle = Math.PI / 2 + (displayIndex * 2 * Math.PI) / SEATS;
+  /**
+   * Spread the occupied seats evenly around the table, in seat (clockwise) order, with your own seat
+   * at bottom-centre. Empty seats keep their last geometry; they're hidden anyway.
+   */
+  private layoutSeats(mySeat: number | null, occupied: number[]) {
+    if (occupied.length === 0) return;
+    const anchor = mySeat !== null && occupied.includes(mySeat) ? mySeat : occupied[0]!;
+    const ordered = [...occupied].sort((a, b) => ((a - anchor + SEATS) % SEATS) - ((b - anchor + SEATS) % SEATS));
+    ordered.forEach((seat, displayIndex) => {
+      const node = this.seats[seat]!;
+      const angle = Math.PI / 2 + (displayIndex * 2 * Math.PI) / ordered.length;
       const plate = { x: CX + 505 * Math.cos(angle), y: CY + 268 * Math.sin(angle) };
       const toward = (t: number, sideways = 0): Point => {
         const dx = CX - plate.x;
