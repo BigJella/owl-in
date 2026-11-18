@@ -275,9 +275,13 @@ input[type=range] { accent-color: var(--gold); width: 100%; }
 .panel-head small, .panel-stats small, .clock-block small {
   color: var(--muted); font-family: var(--display); font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
 }
-.panel-head strong { font-family: var(--display); font-size: 22px; font-weight: 600; letter-spacing: .5px; text-transform: uppercase; }
-.panel-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
-.panel-tags:empty { display: none; }
+.panel-name-row { display: flex; align-items: center; gap: 10px; min-height: 30px; min-width: 0; }
+.panel-head strong {
+  font-family: var(--display); font-size: 22px; font-weight: 600; letter-spacing: .5px; text-transform: uppercase;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* Tags live on the name row so toggling Folded / All-in never pushes anything else around. */
+.panel-tags { display: flex; flex-wrap: nowrap; gap: 6px; margin-left: auto; flex: none; }
 .panel-stats { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--line); background: var(--black); }
 .panel-stats > div { padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
 .panel-stats > div + div { border-left: 1px solid var(--line); }
@@ -298,7 +302,8 @@ input[type=range] { accent-color: var(--gold); width: 100%; }
 .waiting-note { margin: 0; font-size: 14px; }
 .cashout { width: 100%; flex: none; }
 /* Buttons whose label contains a changing amount: fixed width + fixed-width digits so they never resize. */
-.amount-btn { min-width: 230px; font-variant-numeric: tabular-nums; }
+.amount-btn { font-variant-numeric: tabular-nums; }
+.dialog-actions .amount-btn { width: 172px; padding: 0 12px; }
 
 /* Action controls (vertical, in the sidebar) */
 .action-bar { display: flex; flex-direction: column; gap: 8px; }
@@ -344,6 +349,7 @@ input[type=range] { accent-color: var(--gold); width: 100%; }
   .panel-controls { order: -1; margin-top: 0; }
   .panel-head { flex-direction: row; align-items: center; flex-wrap: wrap; gap: 8px; }
   .panel-head strong { font-size: 17px; }
+  .panel-name-row { flex: 1; }
   .clock-block { min-height: 0; }
   .clock-block strong { font-size: 24px; }
 }

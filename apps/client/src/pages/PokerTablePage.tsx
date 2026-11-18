@@ -173,13 +173,15 @@ export function PokerTablePage({ onLeave, cashedOut = false }: { onLeave: () => 
           <div className="panel-info">
             <div className="panel-head">
               <small>You</small>
-              <strong>{me?.name ?? "Waiting for a seat"}</strong>
-              <div className="panel-tags">
-                {view?.leaveMode === "queued" && !cashedOut && <span className="tag danger">Last hand</span>}
-                {view?.amWaiting && <span className="tag">Seated next hand</span>}
-                {me?.status === "waiting" && <span className="tag">Dealt in next hand</span>}
-                {me?.status === "folded" && view?.phase !== "idle" && <span className="tag">Folded</span>}
-                {me?.status === "allIn" && <span className="tag gold">All-in</span>}
+              <div className="panel-name-row">
+                <strong>{me?.name ?? "Waiting for a seat"}</strong>
+                <div className="panel-tags">
+                  {view?.leaveMode === "queued" && !cashedOut && <span className="tag danger">Last hand</span>}
+                  {view?.amWaiting && <span className="tag">Seated next hand</span>}
+                  {me?.status === "waiting" && <span className="tag">Dealt in next hand</span>}
+                  {me?.status === "folded" && view?.phase !== "idle" && <span className="tag">Folded</span>}
+                  {me?.status === "allIn" && <span className="tag gold">All-in</span>}
+                </div>
               </div>
             </div>
 
@@ -210,9 +212,6 @@ export function PokerTablePage({ onLeave, cashedOut = false }: { onLeave: () => 
                   <strong>You cashed out{me ? ` with ${fmt(me.stack)}` : ""}.</strong>
                   <span className="muted"> You can rejoin this table in 30 minutes.</span>
                 </div>
-                <button className="primary" onClick={onLeave}>
-                  Back to lobby
-                </button>
               </div>
             )}
             {view && !cashedOut && view.readyGraceRemainingMs !== null && <ReadyPanel view={view} clock={clock} />}
@@ -276,7 +275,7 @@ function ClockBlock({ clock }: { clock: Clock }) {
     turn: "Auto check / fold at 0",
     grace: `Then your bank (${clock.kind === "grace" ? clock.bank : 0}s) drains`,
     draining: "Ready up to stop the drain",
-    bank: "Refills when it's your turn",
+    bank: "Auto check / fold at 0",
   }[clock.kind];
   return (
     <div className={`clock-block ${urgent ? "urgent" : live ? "live" : ""}`}>
@@ -305,7 +304,6 @@ function ReadyPanel({ view, clock }: { view: PokerTableView; clock: Clock | null
           {humans.length - notReady.length}/{humans.length} ready
           {notReady.length > 0 && ` · waiting for ${notReady.join(", ")}`}
         </span>
-        {needMe && clock?.kind === "draining" && <div className="form-error">Your time bank is draining. Ready up!</div>}
       </div>
       {view.rebuy ? (
         <span className="tag danger">Meal plan empty</span>

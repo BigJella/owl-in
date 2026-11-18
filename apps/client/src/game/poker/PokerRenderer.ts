@@ -6,9 +6,9 @@ import type { PokerTextures } from "./assets";
 
 // Everything is laid out in a fixed design space and scaled to fit the canvas.
 const W = 1200;
-const H = 720;
+const H = 780;
 const CX = W / 2;
-const CY = 330;
+const CY = 382;
 const SEATS = 8;
 const CARD_W = 52;
 const CARD_H = 74;
@@ -652,10 +652,15 @@ export class PokerRenderer {
         return { x: plate.x + dx * t - (dy / len) * sideways, y: plate.y + dy * t + (dx / len) * sideways };
       };
       const cards = toward(0.3);
-      // Clock/status/hand name go on whichever side of the plate the cards aren't: below for the bottom seats.
+      // Labels go on the side of the plate away from the cards, so they never stack on them:
+      //  - bottom seats (cards above the plate): action below, then status/clock under it
+      //  - top seats (cards below the plate): action, status/clock and hand result stacked ABOVE the name
+      //  - side seats (cards beside the plate): status/clock above, action below
       const below = plate.y > CY + 60;
-      node.clock.y = below ? 82 : -52;
-      node.status.y = below ? 82 : -50;
+      const above = plate.y < CY - 60;
+      node.action.y = above ? -50 : 60;
+      node.clock.y = below ? 82 : above ? -72 : -52;
+      node.status.y = below ? 82 : above ? -72 : -50;
       node.geom = {
         plate,
         cards: [
@@ -674,7 +679,8 @@ export class PokerRenderer {
       node.betChip.position.copyFrom(node.geom.bet);
       node.betText.position.set(node.geom.bet.x + 16, node.geom.bet.y);
       node.betText.anchor.set(0, 0.5);
-      node.hand.position.set(cards.x, below ? cards.y - CARD_H / 2 - 13 : cards.y + CARD_H / 2 + 13);
+      if (above) node.hand.position.set(plate.x, plate.y - 96);
+      else node.hand.position.set(cards.x, below ? cards.y - CARD_H / 2 - 13 : cards.y + CARD_H / 2 + 13);
     });
   }
 
