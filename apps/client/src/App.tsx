@@ -87,11 +87,12 @@ export default function App() {
   if (!session) {
     page = <NamePage initialName={savedName() ?? ""} error={nameError} busy={busy} onSubmit={identify} />;
   } else if (session.roomId) {
-    page = <PokerTablePage onLeave={leaveTable} />;
+    page = <PokerTablePage onLeave={leaveTable} playerName={session.name} />;
   } else if (showingResult) {
     page = (
       <PokerTablePage
         cashedOut
+        playerName={session.name}
         onLeave={() => {
           setShowingResult(false);
           pokerStore.reset();

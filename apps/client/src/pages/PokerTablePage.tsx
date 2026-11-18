@@ -138,7 +138,16 @@ function TableStrip({ received, now }: { received: ReceivedMessage; now: number 
  * `cashedOut`: you've already been removed after a queued cash-out. The table stays on screen so the
  * final hand's result can play out; the only control is going back to the lobby.
  */
-export function PokerTablePage({ onLeave, cashedOut = false }: { onLeave: () => void; cashedOut?: boolean }) {
+export function PokerTablePage({
+  onLeave,
+  cashedOut = false,
+  playerName,
+}: {
+  onLeave: () => void;
+  cashedOut?: boolean;
+  /** Your session name, shown before you have a seat. */
+  playerName: string;
+}) {
   const received = usePokerState();
   const view = received?.message.view ?? null;
   const [error, setError] = useState<string | null>(null);
@@ -174,7 +183,7 @@ export function PokerTablePage({ onLeave, cashedOut = false }: { onLeave: () => 
             <div className="panel-head">
               <small>You</small>
               <div className="panel-name-row">
-                <strong>{me?.name ?? "Waiting for a seat"}</strong>
+                <strong>{me?.name ?? playerName}</strong>
                 <div className="panel-tags">
                   {view?.leaveMode === "queued" && !cashedOut && <span className="tag danger">Last hand</span>}
                   {view?.amWaiting && <span className="tag">Seated next hand</span>}

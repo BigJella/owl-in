@@ -31,17 +31,45 @@ pick a name, and play Texas Hold'em against each other **and against AI bot play
   at the top of `PokerRenderer.ts` (`GOLD`, `INK`, `SURFACE`, `LINE`, ...).
 - **Sharp and flat.** Square corners (radius 0; 2px max on tiny things), 1px rules for structure, solid fills.
   **No glows, gradients, blur or soft shadows.** The user explicitly dislikes "tech-bro glow".
+- **Gold is an accent, used sparingly.** Structural lines are neutral (`--line`). Gold rules are thin (1px) and reserved
+  for the table strip's top and bottom rules and the lobby table header. The nav underline and sidebar edges are neutral.
+  The user found several thick gold lines stacked at the top of the page jarring.
 - **Type:** Oswald (condensed, uppercase, letter-spaced) for headings, labels, numbers and buttons; Inter for body text.
   Both are bundled via `@fontsource` (works offline on LAN). Pixi waits for Oswald to load before drawing.
 - Buttons: `.primary` (solid gold, black text), `.secondary` (black, gray border → gold on hover), `.primary.danger`.
   Tags: `.tag` / `.tag.gold` / `.tag.danger` (square, outlined).
-- **Table screen layout:**
-  - **`TableStrip`** across the top, between two gold rules with cells split by vertical bars. It shows **only
-    table-wide info** (name, blinds, hand #, stage, pot, dealer, SB/BB, who's acting plus their clock, between-hands status).
-    Every player must see the same strip, so never put personal data in it.
-  - **`PlayerSidebar`** (right, 340px) holds everything personal: name, stack, in-pot, your clock, tags, actions,
-    ready/rebuy, cash out. Below 900px it stacks under the table with the actions first.
+- **Layout stability is a requirement.** The user notices and dislikes UI that shifts as values change. Use fixed
+  widths/heights, `font-variant-numeric: tabular-nums`, and anchored regions so that changing numbers, names and controls
+  coming and going never move other elements.
+- **Table screen layout** (`apps/client/src/pages/PokerTablePage.tsx`):
+  - **`TableStrip`** sits across the top between two gold rules, with cells split by vertical bars. It shows **only
+    table-wide info**: name, blinds, hand #, stage, pot (with a main/side breakdown), dealer, SB/BB, and who's acting
+    plus their clock (or "thinking" for bots, or the between-hands status). Every player must see the same strip, so
+    never put personal data in it. The cells use **fixed proportional grid columns** (not content-sized), so the strip
+    never shifts. Overflowing text is cut off with an ellipsis, with a `title` tooltip showing the full value.
+  - **Player sidebar** (right, 340px): everything personal, split in two.
+    - **`.panel-info` (top, static):** name with Folded / All-in / Last hand tags **on the same row**, Stack / In pot,
+      and the `ClockBlock`. The clock block has a constant height (label, seconds, a one-line note). Between your turns it
+      shows your time bank with a greyed **"+20s next turn"** refill preview (or "Max banked"). Its note is
+      "Auto check / fold at 0".
+    - **`.panel-controls` (bottom, anchored):** "Waiting for X…", the ready-up panel, the betting controls (`ActionBar`,
+      vertical: Fold/Check/Call, presets, slider, typed amount + Raise), and the single Cash out / Back to lobby button.
+    - Below 900px the sidebar stacks under the table, controls first.
+  - Buttons whose label has a changing amount (`Reload $X`, `Sit down with $X`) use `.amount-btn` (tabular digits;
+    the reload button is a fixed 172px).
+  - Dialogs: Leave (30-min lockout called out), Rebuy ("Your meal plan is empty", 30s), plus a cashed-out result view.
+    Don't add redundant warnings when the clock block already shows the state (e.g. no separate "bank draining" text).
+- **Canvas** (`PokerRenderer.ts`, design space 1200×780, center `CX,CY`):
   - The felt is black with a gold rail. The table name and blinds are **not** drawn on the canvas (they're in the strip).
+  - **Seats are spread evenly** around the table based on who's actually seated, in seat order, with your seat at
+    bottom-center (`layoutSeats`). The layout recalculates between hands whenever occupancy changes, *before* the next
+    animation is built.
+  - **Labels avoid the cards:**
+    - bottom seats: action, then status/clock, below the plate
+    - side seats: status/clock above, action below
+    - **top seats**: action, status/clock and the showdown hand-name pill are stacked **above** the plate
+  - **Pot:** dead center pre-flop. Once the board is out, it sits above the board and the pot + board group is centered.
+    Chip flights target the pot's current position (`potPos`).
 
 ---
 
@@ -64,7 +92,11 @@ TypeScript monorepo with npm workspaces. Node 26, npm 12, Windows (bash + PowerS
   Windows Firewall may prompt for Node.
 - **Before finishing work:** `npm run typecheck && npm test && npm run build`, and for gameplay changes run `scripts/bots.mjs`
   against `npm run dev`. For UI changes, check in a browser at desktop (1280px) **and** phone (390px) widths.
-  Previous sessions drove headless Chrome with `puppeteer-core` installed in the session scratchpad (not a project dependency).
+  Previous sessions drove headless Chrome (`C:/Program Files/Google/Chrome/Application/chrome.exe`) with `puppeteer-core`
+  installed in the session scratchpad (not a project dependency). Gotchas:
+  - Use a separate `browser.createBrowserContext()` per simulated player (localStorage holds the session token and name).
+  - `innerText` is affected by CSS `text-transform: uppercase`, so match button and label text case-insensitively.
+  - Seat labels, cards and pot are drawn on the canvas: assert on DOM state (strip, sidebar, dialogs) or screenshots.
 - Stop any dev server you started so ports 3000/5173 are free for the user.
 
 ---
@@ -78,14 +110,14 @@ apps/
     src/networking/socket.ts  Typed Socket.IO client; per-browser session token (localStorage) for seat reclaim
     src/networking/pokerStore.ts  Buffers every poker:state message outside React (animations never drop events)
     src/pages/                NamePage, HomePage, PokerLobbyPage (sortable/filterable room list, buy-in/create dialogs),
-                              PokerTablePage (shared TableStrip + personal PlayerSidebar with clock/actions/ready-up,
-                              rebuy dialog, leave dialog, cashed-out result view)
+                              PokerTablePage (shared TableStrip; sidebar = static info top + controls bottom;
+                              ClockBlock, ReadyPanel, RebuyDialog, LeaveDialog, cashed-out result view)
     src/game/poker/
       pixiApp.ts              ONE Pixi Application for the whole session (canvas is moved between pages; never destroyed)
       PokerScene.tsx          Mounts the shared canvas + creates a PokerRenderer per table visit
       PokerRenderer.ts        Imperative scene (black felt, gold rail): seats, cards, chips, pots; plays server events as gsap timelines,
                               then snaps to the authoritative view
-      ActionBar.tsx           Fold / Check / Call / Raise (presets, slider, typed amount); uniform 52px controls
+      ActionBar.tsx           Fold / Check / Call / Raise (presets, slider, typed amount); laid out vertically in the sidebar
       assets.ts               Card/chip textures (public/assets/cards/{rank}{S|H|D|C}.svg + back.svg, chips/chip.svg)
   server/                     Express + Socket.IO, run with tsx
     src/index.ts              Wires registry, house bank, room manager, socket handlers
@@ -187,11 +219,14 @@ scripts/                      bots.mjs (e2e smoke), generate-placeholder-cards.m
 - [x] Bust → 30s reload-or-leave dialog; rejoin penalties; queued irreversible cash-out with LAST HAND tag and result view
 - [x] Lobby: name entry, home, room list sortable by every column + "Open seats only", create table, buy-in dialog, stage column
 - [x] Pixi table: dealing/betting/collect/flip/showdown/payout animations; D/SB/BB markers; "in pot", last action,
-      "thinking…", centered pot + side pots, hand-name pills above cards; info strip; live clocks in seconds
-- [x] Action bar with presets, slider, typed amount (Enter submits); mobile layout (sticky bar, Fold/Check first)
+      "thinking…", pot + side pots, hand-name pills; live clocks in seconds
+- [x] Even seat spacing by occupancy; pot centered (moves above the board post-flop); top-seat labels above the plate
+- [x] Action bar with presets, slider, typed amount (Enter submits); phone layout (controls first, Fold/Check visible)
 - [x] Dining Dollars currency + light humor
-- [x] Black & gold sharp/flat redesign site-wide; shared table strip + personal sidebar; black felt
-- [x] Git repo initialized on `main` with an initial commit; stray root `index.ts` removed
+- [x] Black & gold sharp/flat redesign site-wide; black felt
+- [x] Shared fixed-grid table strip (identical for all players, no shifting); sidebar with static info top / controls bottom;
+      time bank + "+20s next turn" preview between turns
+- [x] Git repo on `main` (history: initial commit → UI rework → UI improvements → sidebar → table/sidebar polish)
 - [x] Tests: 37 Vitest tests (engine + rooms with fake timers incl. 30-min soak); `scripts/bots.mjs` e2e
 
 **Not done / known gaps**
@@ -244,5 +279,10 @@ scripts/                      bots.mjs (e2e smoke), generate-placeholder-cards.m
 - **Room tests** use `vi.useFakeTimers()` and `advanceTimersByTimeAsync`. Helpers in `PokerRoom.test.ts` create humans with
   fake connected sockets. Private methods are reached with `(room as unknown as {...})` when needed.
 - **Copy tone:** keep jokes rare (see Project goals). Amounts always go through `formatDD`.
-- **UI checks:** every control in the action bar is `--control-h` (52px). Test at 390px wide; Fold/Check must stay visible.
+- **UI checks:** action buttons are `--control-h` (52px). Test at 390px wide; Fold/Check must stay visible.
+  Check that nothing shifts while values change (strip cells, sidebar info, amount buttons).
+- **Git workflow:** the user asks for commits explicitly. Do feature work on a branch off `main`
+  (e.g. `ui-rework`, `ui-improvements`), commit there, and merge into `main` (fast-forward) only when asked.
+  No remote is configured, so nothing gets pushed. End commit messages with the Co-Authored-By line.
+- **Keep this file current.** Update the rules, checklist and next steps here whenever behaviour or design changes.
 - `npm install` warns that esbuild's install script was blocked. Harmless: Vite and tsx work.
