@@ -105,7 +105,7 @@ describe("replacement", () => {
 });
 
 describe("turns", () => {
-  it("auto check/folds a human whose time bank runs out, then refills 20s next turn", async () => {
+  it("auto check/folds a human whose clock runs out, then refills 20s next turn", async () => {
     const r = room();
     const { player } = human();
     r.join(player, 500);
@@ -144,7 +144,7 @@ async function seatedAtReadyPhase() {
   const h = human();
   r.join(h.player, 500);
   await vi.advanceTimersByTimeAsync(r.timing.gapMs);
-  // Fold quickly whenever it's our turn so we keep most of our time bank.
+  // Fold quickly whenever it's our turn so we keep most of our clock.
   for (let i = 0; i < 400 && r.table.phase !== "idle"; i += 1) {
     if (r.viewFor(h.player.id).myLegalActions) r.submitAction(h.player, { type: "fold" });
     await vi.advanceTimersByTimeAsync(250);
@@ -167,7 +167,7 @@ describe("ready-up between hands", () => {
     r.close();
   });
 
-  it("drains the time bank after the grace period and auto-readies at zero", async () => {
+  it("drains the clock after the grace period and auto-readies at zero", async () => {
     const { r, h, handId } = await seatedAtReadyPhase();
     const seat = r.viewFor(h.player.id).mySeat!;
     const bank = r.viewFor(h.player.id).seats[seat]!.timeBankMs;
@@ -220,7 +220,7 @@ describe("busting", () => {
     expect(view.rebuy).toMatchObject({ min: 200, max: 1_000 });
     expect(view.rebuy!.remainingMs).toBeLessThanOrEqual(r.timing.rebuyDecisionMs);
 
-    await vi.advanceTimersByTimeAsync(r.timing.readyGraceMs + 10_000); // time bank isn't touched while deciding
+    await vi.advanceTimersByTimeAsync(r.timing.readyGraceMs + 10_000); // clock isn't touched while deciding
     expect(r.table.handId).toBe(handId);
     const bankroll = h.player.bankroll;
     expect(r.rebuy(h.player, 400)).toBeNull();

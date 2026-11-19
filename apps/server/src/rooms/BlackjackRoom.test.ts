@@ -102,7 +102,22 @@ describe("betting", () => {
       await vi.advanceTimersByTimeAsync(250);
     }
     expect(r.ownedSpots(a.player)).toEqual([3]);
-    expect(r.bet(b.player, 4, 10)).toBeNull(); // someone else can sit there now
+    // The one who gave it up sits it out for this betting round (Rebet skips it too)...
+    expect(r.viewFor(a.player.id).myBlockedSpots).toEqual([4]);
+    expect(r.bet(a.player, 4, 10)).toMatch(/gave up spot 5/);
+    expect(r.rebet(a.player)).toBeNull();
+    expect(r.ownedSpots(a.player)).toEqual([3]);
+    // ...while someone else can sit there now.
+    expect(r.bet(b.player, 4, 10)).toBeNull();
+    // Next betting round the block is gone.
+    r.setReady(a.player);
+    r.setReady(b.player);
+    for (let i = 0; i < 40 && r.stage() === "betting"; i += 1) await vi.advanceTimersByTimeAsync(250);
+    for (let i = 0; i < 200 && r.stage() !== "betting"; i += 1) {
+      for (const p of [a.player, b.player]) if (r.viewFor(p.id).myLegal) r.submitAction(p, "stand");
+      await vi.advanceTimersByTimeAsync(250);
+    }
+    expect(r.viewFor(a.player.id).myBlockedSpots).toEqual([]);
     r.close();
   });
 
@@ -159,7 +174,7 @@ describe("playing", () => {
     r.close();
   });
 
-  it("auto-stands when the time bank runs out", async () => {
+  it("auto-stands when the clock runs out", async () => {
     const r = room({ table: rigged("10 9 6 7") }); // 16 vs 9: the human would usually hit
     const { player, messages } = human();
     r.join(player);
@@ -199,7 +214,7 @@ describe("playing", () => {
     near(await turnBank(), 40_000);
     r.submitAction(player, "stand");
 
-    // Next round: 40s banked + 30s, capped at 60s.
+    // Next round: 40s left on the clock + 30s, capped at 60s.
     for (let i = 0; i < 100 && r.stage() !== "betting"; i += 1) await vi.advanceTimersByTimeAsync(250);
     r.bet(player, 0, 10);
     r.setReady(player);
@@ -224,7 +239,7 @@ describe("playing", () => {
   });
 });
 
-describe("betting on the time bank", () => {
+describe("betting on the clock", () => {
   /** Play one round on spot 4 (standing), then return once the next betting window is open. */
   async function playOneRound(r: BlackjackRoom, player: HumanPlayer) {
     r.bet(player, 4, 10);
@@ -237,7 +252,7 @@ describe("betting on the time bank", () => {
     expect(r.stage()).toBe("betting");
   }
 
-  it("keeps bets open past the window while last round's players spend their bank", async () => {
+  it("keeps bets open past the window while last round's players spend their clock", async () => {
     const r = room({ table: rigged("10 10 10 10 7 7 7 7 7 7") }); // everyone 17: no blackjacks, so we always get a turn
     const { player } = human();
     r.join(player);
@@ -263,7 +278,7 @@ describe("betting on the time bank", () => {
     r.close();
   });
 
-  it("closes once the bank runs dry (and the spot is given up if there's no bet)", async () => {
+  it("closes once the clock runs out (and the spot is given up if there's no bet)", async () => {
     const r = room({ table: rigged("10 10 10 10 7 7 7 7 7 7") });
     const { player } = human();
     r.join(player);
@@ -282,7 +297,7 @@ describe("betting on the time bank", () => {
     const a = human();
     r.join(a.player);
     await playOneRound(r, a.player);
-    const b = human(); // joins now: no bank-funded betting for them
+    const b = human(); // joins now: no betting on the clock for them
     r.join(b.player);
     r.bet(b.player, 6, 10);
     r.bet(a.player, 4, 10);

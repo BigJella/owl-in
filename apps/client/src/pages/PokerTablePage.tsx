@@ -8,7 +8,7 @@ import { ActionBar } from "../game/poker/ActionBar";
 
 const fmt = formatDD;
 
-/** Your own clock: your turn, the ready-up grace/drain between hands, or just your banked time. */
+/** Your own clock: your turn, the ready-up grace/drain between hands, or just your clock. */
 function myClock(received: ReceivedMessage, now: number): Clock | null {
   const { view } = received.message;
   const me = view.mySeat === null ? null : view.seats[view.mySeat];
@@ -272,7 +272,7 @@ function ReadyPanel({ view, clock }: { view: PokerTableView; clock: Clock | null
   );
 }
 
-/** Busted between hands: buy back in (which readies you) or cash out. 30 seconds, no time bank involved. */
+/** Busted between hands: buy back in (which readies you) or cash out. 30 seconds, no clock involved. */
 function RebuyDialog(props: {
   rebuy: NonNullable<PokerTableView["rebuy"]>;
   seconds: number;

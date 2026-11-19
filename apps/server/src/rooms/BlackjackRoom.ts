@@ -92,9 +92,9 @@ interface Member {
   timeBankMs: number;
   /** Pressed Deal during this betting round. */
   ready: boolean;
-  /** Had a bet in the last round: may run past the betting window on their time bank. */
+  /** Had a bet in the last round: may run past the betting window on their clock. */
   playedLastRound: boolean;
-  /** Betting window over and still not ready: the time bank drains from here. */
+  /** Betting window over and still not ready: the clock runs from here. */
   drainSince: number | null;
   /** Asked to leave mid-round: removed once the round ends. */
   leaving: boolean;
@@ -102,6 +102,8 @@ interface Member {
   lastBets: { spot: number; amount: number }[];
   /** Spots this player gives up when the current round ends. */
   releasing: Set<number>;
+  /** Spots given up mid-round: this player can't bet on them in the following betting round. */
+  blocked: Set<number>;
 }
 
 type Owner = HumanPlayer | BlackjackBot;
@@ -144,7 +146,7 @@ export class BlackjackRoom {
   private moneyOnTable = 0;
   /** Bets are being taken. */
   private bettingOpen = false;
-  /** End of the betting window (after which last round's players spend their time bank). */
+  /** End of the betting window (after which last round's players spend their clock). */
   private bettingEndsAt: number | null = null;
   /** Everyone's in: bets close at this time. */
   private closingAt: number | null = null;
@@ -204,6 +206,7 @@ export class BlackjackRoom {
       disconnectedAt: null,
       lastBets: [],
       releasing: new Set(),
+      blocked: new Set(),
     });
     // A bot-only table waiting out its interval opens bets right away for the newcomer.
     if (!this.bettingOpen && this.table.canBet && this.turn === null) this.scheduleRound([]);
@@ -266,6 +269,7 @@ export class BlackjackRoom {
     if (!member) return "You're not at this table.";
     if (!this.bettingOpen || !this.table.canBet) return "Bets are closed.";
     if (!Number.isInteger(spot) || spot < 0 || spot >= BJ_SPOTS) return "No such spot.";
+    if (member.blocked.has(spot)) return `You gave up spot ${spot + 1}. You can bet on it again next round.`;
     if (!Number.isInteger(amount) || amount < this.minBet || amount > this.maxBet) {
       return `Bets are ${formatDD(this.minBet)} to ${formatDD(this.maxBet)}.`;
     }
@@ -320,6 +324,7 @@ export class BlackjackRoom {
     if (member.lastBets.length === 0) return "No previous bets to repeat.";
     let error: string | null = null;
     for (const { spot, amount } of member.lastBets) {
+      if (member.blocked.has(spot)) continue; // given up: not repeated this round
       if (this.owners[spot] === player && this.table.spots[spot]!.bet === amount) continue;
       error = this.bet(player, spot, amount) ?? error;
     }
@@ -409,7 +414,7 @@ export class BlackjackRoom {
 
   /**
    * Last round's players who are still deciding. Once the betting window is over they keep it open
-   * by spending their time bank (like readying up between poker hands).
+   * by spending their clock (like readying up between poker hands).
    */
   private bankBettors(): Member[] {
     return [...this.members.values()].filter(
@@ -417,7 +422,7 @@ export class BlackjackRoom {
     );
   }
 
-  /** Fold any betting-time drain so far into the stored bank. */
+  /** Fold any betting-time drain so far into the stored clock. */
   private commitDrain(member: Member) {
     member.timeBankMs = this.liveBank(member);
     member.drainSince = null;
@@ -430,7 +435,7 @@ export class BlackjackRoom {
 
   /**
    * Bets close early once every connected human holding a spot has pressed Deal. Otherwise they close when the
-   * window ends, unless last round's players are still deciding: then it stays open while their time banks drain.
+   * window ends, unless last round's players are still deciding: then it stays open while their clocks run.
    */
   private checkBettingDone() {
     if (!this.bettingOpen || this.bettingEndsAt === null || this.closingAt !== null) return;
@@ -466,6 +471,7 @@ export class BlackjackRoom {
     for (const member of this.members.values()) {
       this.commitDrain(member);
       member.ready = false;
+      member.blocked.clear(); // sat out one betting round: those spots are open to them again
       const bets = this.ownedSpots(member.player).flatMap((spot) => {
         const amount = this.table.spots[spot]!.bet;
         return amount > 0 ? [{ spot, amount }] : [];
@@ -597,7 +603,10 @@ export class BlackjackRoom {
         this.removeMember(member, true);
         continue;
       }
-      for (const spot of member.releasing) if (this.owners[spot] === member.player) this.owners[spot] = null;
+      for (const spot of member.releasing) {
+        if (this.owners[spot] === member.player) this.owners[spot] = null;
+        member.blocked.add(spot);
+      }
       member.releasing.clear();
     }
     const events = this.table.clearTable();
@@ -835,7 +844,7 @@ export class BlackjackRoom {
           ? Math.max(0, this.closingAt - now)
           : this.bettingEndsAt !== null && now < this.bettingEndsAt
             ? this.bettingEndsAt - now
-            : null // running on players' time banks
+            : null // running on players' clocks
         : this.insuranceEndsAt !== null
             ? Math.max(0, this.insuranceEndsAt - now)
             : null,
@@ -863,6 +872,7 @@ export class BlackjackRoom {
           ? { spots: pendingInsurance, cost: pendingInsurance.reduce((sum, spot) => sum + t.insuranceCost(spot), 0) }
           : null,
       myLastBets: member ? member.lastBets.map((b) => ({ ...b })) : [],
+      myBlockedSpots: member ? [...member.blocked] : [],
       amReady: member?.ready ?? false,
       leaveMode: !member ? "now" : member.leaving ? "queued" : me && this.canLeaveNow(me) ? "now" : "after-hand",
       members: this.members.size,

@@ -8,8 +8,8 @@ const cardText = (c: PlayingCard) => `${c.rank}${c.suit[0]}`;
 
 /**
  * LLM-backed bot (not wired up yet). Serializes the seat's view to a prompt, asks for
- * a JSON action, and falls back to another strategy on any failure. The room's time
- * bank aborts `signal` if the model is too slow.
+ * a JSON action, and falls back to another strategy on any failure. The room's clock
+ * aborts `signal` if the model is too slow.
  */
 export class LlmStrategy implements PokerStrategy {
   readonly name = "llm";

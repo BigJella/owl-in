@@ -84,7 +84,7 @@ export interface PokerSeatView {
   /** Face-up cards, only after a showdown. */
   revealedCards: PlayingCard[] | null;
   revealedHand: string | null;
-  /** Remaining time bank in ms (live value while it is this seat's turn). Always 0 for bots. */
+  /** Remaining clock in ms (live value while it is this seat's turn). Always 0 for bots. */
   timeBankMs: number;
   /** Between hands at tables with humans: has this human readied up? null for bots / during hands. */
   ready: boolean | null;
@@ -112,7 +112,7 @@ export interface PokerTableView {
   toAct: number | null;
   /** Ms left on the acting human's clock when this view was sent (null on bot turns: bots have no clock). */
   turnRemainingMs: number | null;
-  /** Between hands with humans: ms until un-ready players' time banks start draining. */
+  /** Between hands with humans: ms until un-ready players' clocks start draining. */
   readyGraceRemainingMs: number | null;
   /** "now" between hands, "after-hand" while you're in a hand, "queued" once you've asked to cash out. */
   leaveMode: LeaveMode;

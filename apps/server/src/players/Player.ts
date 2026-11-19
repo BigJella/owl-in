@@ -2,7 +2,7 @@ import type { PlayerKind, PokerAction, PokerStateMessage, PokerTableView } from 
 
 /**
  * Anything that can sit at a table. Rooms treat every seat the same way:
- * when it's your turn they call `requestAction` and race it against your time bank.
+ * when it's your turn they call `requestAction` and race it against your clock.
  */
 export abstract class Player {
   abstract readonly kind: PlayerKind;

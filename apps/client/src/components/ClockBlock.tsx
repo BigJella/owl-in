@@ -21,21 +21,21 @@ export type Clock =
 
 /**
  * Your clock, big. Always the same height (label / number / note) so the sidebar never jumps.
- * Between your turns it shows your banked time plus a greyed "+Ns next turn" refill preview.
+ * Between your turns it shows your clock plus a greyed "+Ns next turn" refill preview.
  * `timeoutNote` says what happens at 0 (poker: check/fold, blackjack: stand).
  */
 export function ClockBlock({
   clock,
   timeoutNote = "Auto check / fold at 0",
   graceLabel = "Ready up",
-  drainLabel = "Not ready · bank draining",
-  drainNote = "Ready up to stop the drain",
+  drainLabel = "Not ready · clock running",
+  drainNote = "Ready up to stop your clock",
   refillMs = TIME_BANK_REFILL_MS,
   maxMs = TIME_BANK_MAX_MS,
 }: {
   clock: Clock;
   timeoutNote?: string;
-  /** Wording for the ready-up / betting window and the time-bank drain after it. */
+  /** Wording for the ready-up / betting window and your clock running after it. */
   graceLabel?: string;
   drainLabel?: string;
   drainNote?: string;
@@ -48,7 +48,7 @@ export function ClockBlock({
     turn: "Your turn",
     grace: graceLabel,
     draining: drainLabel,
-    bank: "Time bank",
+    bank: "Your clock",
   }[clock.kind];
   const urgent = clock.kind === "rebuy" || clock.kind === "draining" || (clock.kind === "turn" && clock.seconds <= 5);
   const live = clock.kind !== "bank";
@@ -60,7 +60,7 @@ export function ClockBlock({
   const note = {
     rebuy: "Reload or cash out",
     turn: timeoutNote,
-    grace: `Then your bank (${clock.kind === "grace" ? clock.bank : 0}s) drains`,
+    grace: `Then your clock (${clock.kind === "grace" ? clock.bank : 0}s) runs`,
     draining: drainNote,
     bank: timeoutNote,
   }[clock.kind];
@@ -69,7 +69,7 @@ export function ClockBlock({
       <small>{label}</small>
       <div className="clock-row">
         <strong>{clock.seconds}s</strong>
-        {refill !== null && <span className="clock-refill">{refill > 0 ? `+${refill}s next turn` : "Max banked"}</span>}
+        {refill !== null && <span className="clock-refill">{refill > 0 ? `+${refill}s next turn` : "Clock full"}</span>}
       </div>
       <em>{note}</em>
     </div>

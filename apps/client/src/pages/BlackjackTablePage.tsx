@@ -105,7 +105,7 @@ function myClock(received: ReceivedBlackjack, now: number): Clock | null {
   const elapsed = now - received.receivedAt;
   const myTurn = view.toAct !== null && view.mySpots.includes(view.toAct.spot) && view.turnRemainingMs !== null;
   if (myTurn) return { kind: "turn", seconds: seconds(view.turnRemainingMs! - elapsed) };
-  // Played last round and still betting: the window, then your time bank keeps bets open.
+  // Played last round and still betting: the window, then your clock keeps bets open.
   if (view.myBettingClock === "window" && view.phaseRemainingMs !== null) {
     const windowLeft = view.phaseRemainingMs - elapsed;
     if (windowLeft > 0) return { kind: "grace", seconds: seconds(windowLeft), bank: Math.floor(view.myTimeBankMs / 1000) };
@@ -139,6 +139,7 @@ export function BlackjackTablePage({ onLeave, playerName }: { onLeave: () => voi
     if (!view) return;
     const free = (i: number) => {
       const s = view.spots[i];
+      if (view.myBlockedSpots.includes(i)) return false;
       return !s || s.kind === "bot" || view.mySpots.includes(i);
     };
     if (selected !== null && free(selected)) return;
@@ -203,8 +204,8 @@ export function BlackjackTablePage({ onLeave, playerName }: { onLeave: () => voi
                 clock={clock}
                 timeoutNote="Auto stand at 0"
                 graceLabel="Place bets"
-                drainLabel="Betting on your time bank"
-                drainNote="Press Deal to stop the drain"
+                drainLabel="Betting on your clock"
+                drainNote="Press Deal to stop your clock"
                 refillMs={BJ_TURN_REFILL_MS}
                 maxMs={BJ_TIME_BANK_MAX_MS}
               />
@@ -299,6 +300,15 @@ function BetPanel(props: {
   const hasBets = view.mySpots.some((s) => (view.spots[s]?.bet ?? 0) > 0);
   const typedValue = Number(typed.replace(/[^\d]/g, ""));
   const typedInvalid = typed !== "" && (typedValue < view.minBet || typedValue > view.maxBet);
+  const blockedSpot = selected !== null && view.myBlockedSpots.includes(selected);
+  /** Nothing to change: the amount is already this spot's bet. */
+  const unchanged = currentBet > 0 && amount === currentBet;
+
+  // Selecting a spot you've bet on shows its bet in the amount box and slider.
+  useEffect(() => {
+    if (currentBet > 0) setAmount(currentBet);
+    // Only on a spot change: re-running when the bet itself changes would fight the player editing the amount.
+  }, [selected]);
 
   function placeBet(value = amount) {
     if (selected === null) return;
@@ -313,17 +323,28 @@ function BetPanel(props: {
         {Array.from({ length: BJ_SPOTS }, (_, i) => {
           const s = view.spots[i];
           const isMine = view.mySpots.includes(i);
-          const blocked = s?.kind === "human" && !isMine;
+          const givenUp = view.myBlockedSpots.includes(i);
+          const blocked = (s?.kind === "human" && !isMine) || givenUp;
           return (
             <button
               key={i}
               className={`spot-btn ${selected === i ? "selected" : ""} ${isMine ? "mine" : ""} ${s?.kind === "bot" ? "bot" : ""}`}
               disabled={blocked}
               onClick={() => onSelect(i)}
-              title={blocked ? `${s!.name}'s spot` : s?.kind === "bot" ? `${s.name} (bot) gives up this spot if you bet` : `Spot ${i + 1}`}
+              title={
+                givenUp
+                  ? "You gave up this spot. You can bet on it again next round."
+                  : blocked
+                    ? `${s!.name}'s spot`
+                    : s?.kind === "bot"
+                      ? `${s.name} (bot) gives up this spot if you bet`
+                      : `Spot ${i + 1}`
+              }
             >
               {i + 1}
-              <small>{isMine ? (s && s.bet > 0 ? "Bet" : "Yours") : s?.kind === "bot" ? "Bot" : blocked ? "Taken" : "Open"}</small>
+              <small>
+                {givenUp ? "Freed" : isMine ? (s && s.bet > 0 ? "Bet" : "Yours") : s?.kind === "bot" ? "Bot" : blocked ? "Taken" : "Open"}
+              </small>
             </button>
           );
         })}
@@ -373,7 +394,7 @@ function BetPanel(props: {
         </label>
         <button
           className="action raise amount-btn"
-          disabled={selected === null || !affordable || atCap || takenByHuman}
+          disabled={selected === null || !affordable || atCap || takenByHuman || blockedSpot || unchanged}
           onClick={() => placeBet()}
         >
           {currentBet > 0 ? "Change" : "Bet"} {fmt(amount)}
@@ -442,7 +463,7 @@ function SpotRelease({ view }: { view: BlackjackTableView }) {
   return (
     <div className="spot-release">
       <small>Free a spot after this round</small>
-      <div className="spot-release-row">
+      <div className="spot-release-row" style={{ gridTemplateColumns: `repeat(${view.mySpots.length}, minmax(0, 1fr))` }}>
         {view.mySpots.map((spot) => {
           const releasing = view.spots[spot]?.releasing ?? false;
           return (

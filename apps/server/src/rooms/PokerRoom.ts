@@ -28,7 +28,7 @@ import type { StatsStore } from "../stats/StatsStore";
 export interface RoomTiming {
   /** Short pause before dealing once everyone is ready (also the minimum gap in bot-only rooms). */
   gapMs: number;
-  /** After a hand, humans get this long to ready up before their time bank starts draining. */
+  /** After a hand, humans get this long to ready up before their clock starts draining. */
   readyGraceMs: number;
   /** Bot-only rooms start at most one hand per this interval. */
   botOnlyHandIntervalMs: number;
@@ -44,7 +44,7 @@ export interface RoomTiming {
   awayActionDelayMs: number;
   /** After cashing out or being kicked, how long before you may rejoin the same table. */
   rejoinPenaltyMs: number;
-  /** A busted human gets this long (independent of their time bank) to rebuy or leave. */
+  /** A busted human gets this long (independent of their clock) to rebuy or leave. */
   rebuyDecisionMs: number;
 }
 
@@ -97,14 +97,14 @@ interface Occupant {
   timeBankMs: number;
   /** Will be removed at the next gap; auto-folds until then. */
   leaving: boolean;
-  /** When a human lost connection; their bank drains in real time from here. */
+  /** When a human lost connection; their clock runs in real time from here. */
   disconnectedAt: number | null;
   dropTimer: ReturnType<typeof setTimeout> | null;
   /** Ready for the next hand (humans only; bots are always ready). */
   ready: boolean;
-  /** While not ready after the grace period, the time bank drains from this moment. */
+  /** While not ready after the grace period, the clock runs from this moment. */
   drainSince: number | null;
-  /** Busted between hands: must rebuy or leave by this time (not tied to the time bank). */
+  /** Busted between hands: must rebuy or leave by this time (not tied to the clock). */
   rebuyDeadline: number | null;
   /** Asked to cash out mid-hand: plays it out, then is removed when the hand ends. Irreversible. */
   cashingOut: boolean;
@@ -137,7 +137,7 @@ export class PokerRoom {
   private gapTimer: ReturnType<typeof setTimeout> | null = null;
   private nextHandAt: number | null = null;
   private lastHandStartedAt = -Infinity;
-  /** Set between hands at tables with humans: when un-ready players' banks start draining. */
+  /** Set between hands at tables with humans: when un-ready players' clocks start running. */
   private readyGraceEndsAt: number | null = null;
   /** playerId -> time they may rejoin this table. */
   private readonly penalties = new Map<string, number>();
@@ -394,7 +394,7 @@ export class PokerRoom {
     );
   }
 
-  /** Start the hand if everyone is ready, auto-ready anyone whose bank ran dry, else wait for the next deadline. */
+  /** Start the hand if everyone is ready, auto-ready anyone whose clock ran out, else wait for the next deadline. */
   private checkReady() {
     if (this.closed || this.table.phase !== "idle" || this.readyGraceEndsAt === null) return;
     if (this.gapTimer) clearTimeout(this.gapTimer);
@@ -432,7 +432,7 @@ export class PokerRoom {
     }, soonest - now + 1);
   }
 
-  /** Fold any ready-phase drain so far into the stored bank. */
+  /** Fold any ready-phase drain so far into the stored clock. */
   private commitDrain(occ: Occupant) {
     if (occ.drainSince === null || occ.disconnectedAt !== null) return;
     occ.timeBankMs = this.liveBank(occ);

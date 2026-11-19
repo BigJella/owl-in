@@ -53,7 +53,7 @@ pick a name, and play Texas Hold'em and Blackjack against each other **and again
   - **Player sidebar** (right, 340px): everything personal, split in two.
     - **`.panel-info` (top, static):** name with Folded / All-in / Last hand tags **on the same row**, Stack / In pot,
       and the `ClockBlock`. The clock block has a constant height (label, seconds, a one-line note). Between your turns it
-      shows your time bank with a greyed **"+20s next turn"** refill preview (or "Max banked"). Its note is
+      shows your clock with a greyed **"+20s next turn"** refill preview (or "Clock full"). Its note is
       "Auto check / fold at 0".
     - **`.panel-controls` (bottom, anchored):** "Waiting for X…", the ready-up panel, the betting controls (`ActionBar`,
       vertical: Fold/Check/Call, presets, slider, typed amount + Raise), and the single Cash out / Back to lobby button.
@@ -61,7 +61,7 @@ pick a name, and play Texas Hold'em and Blackjack against each other **and again
   - Buttons whose label has a changing amount (`Reload $X`, `Sit down with $X`) use `.amount-btn` (tabular digits;
     the reload button is a fixed 172px).
   - Dialogs: Leave (30-min lockout called out), Rebuy ("Your meal plan is empty", 30s), plus a cashed-out result view.
-    Don't add redundant warnings when the clock block already shows the state (e.g. no separate "bank draining" text).
+    Don't add redundant warnings when the clock block already shows the state (e.g. no separate "clock running" text).
 - **Canvas** (`PokerRenderer.ts`, design space 1200×780, center `CX,CY`):
   - The felt is black with a gold rail. The table name and blinds are **not** drawn on the canvas (they're in the strip).
   - **Seats are spread evenly** around the table based on who's actually seated, in seat order, with your seat at
@@ -137,7 +137,7 @@ apps/
     src/players/              Player (abstract) → HumanPlayer, BotPlayer; PlayerRegistry (token → human)
     src/ai/                   PokerStrategy interface, RuleBasedStrategy (deterministic), LlmStrategy (stub);
                               BlackjackStrategy interface, BasicStrategy (6-deck S17 DAS LS chart)
-    src/rooms/PokerRoom.ts    The table loop: turns, time banks, ready-up, bot seating/pacing, cash-outs, penalties, views
+    src/rooms/PokerRoom.ts    The table loop: turns, clocks, ready-up, bot seating/pacing, cash-outs, penalties, views
     src/rooms/RoomManager.ts  Create/list rooms, keeps ≥2 open, batches room-list pushes
     src/stats/                StatsStore interface + MemoryStatsStore (career totals, sessions, hand records),
                               pokerAttribution (net vs players / vs bots per hand), careerView (privacy, leaderboard)
@@ -204,15 +204,15 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
   Only the designated SB and BB post blinds. Folded players can legitimately show "in pot $10" if they called first.
 - Raises: the minimum raise is the size of the last raise, all-in is always allowed, and a short all-in doesn't reopen betting.
   Side pots are layered by contribution. In a split pot, the odd chip goes to the first winner left of the button.
-- **Time bank (humans only):** +20s each turn, capped at 120s; it starts at 0. At 0 the player auto-checks, or folds if checking isn't possible.
+- **Clock (humans only):** +20s each turn, capped at 120s; it starts at 0. At 0 the player auto-checks, or folds if checking isn't possible.
   Bots have no visible clock: they "think" for 1.5–3s (plus 1.5s after a deal so the animation finishes), with a hidden 30s safety cap.
 
 **Between hands (only at tables with humans)**
 - Everyone sees the result. Seated, connected humans must **ready up**. The grace period is 5s **plus** an estimated
-  end-of-hand animation time (`animationAllowanceMs`). After that, a not-ready player's time bank drains, and at 0 they're auto-readied.
+  end-of-hand animation time (`animationAllowanceMs`). After that, a not-ready player's clock runs, and at 0 they're auto-readied.
   The hand deals 1s after everyone is ready.
 - **Busted** (stack $0): the player can't ready up. A dialog ("Your meal plan is empty") gives **30s**, independent of the
-  time bank, to **Reload** (which also readies them) or **Cash out**. If they don't choose, they're removed.
+  clock, to **Reload** (which also readies them) or **Cash out**. If they don't choose, they're removed.
 
 **Leaving**
 - The leave button always opens a dialog that states the **30-minute rejoin lockout** for that table.
@@ -222,7 +222,7 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
   so outsiders can join a "full" table.
 - Every removal (cash out, bust-and-leave, rebuy timeout, kicked while away) carries the **30-min penalty for that table**.
   Leaving the waiting list before you've been dealt in is free.
-- Disconnects: the seat is held while the time bank drains in real time, and turns auto check/fold. When the bank hits 0 you're
+- Disconnects: the seat is held while the clock runs in real time, and turns auto check/fold. When the clock hits 0 you're
   kicked at the next gap. Reconnecting with the same browser (token) reclaims the seat.
 
 **Blackjack (agreed with the user, keep these)**
@@ -242,9 +242,9 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
 - Bets come straight from the bankroll (no buy-in). The HouseBank is the dealer: stakes go to the house at settlement and it pays
   payouts. Bot stakes come from and return to the house. `BlackjackRoom.onTable()` + bankrolls + house is conserved.
 - Rounds: a **15s betting window** (closes early once every connected human holding a spot has pressed Deal). Players who had
-  a bet **last round** and still hold a spot can keep betting past the window **on their time bank** (it drains, like poker's
+  a bet **last round** and still hold a spot can keep betting past the window **on their clock** (it drains, like poker's
   ready-up; Deal stops it; at 0 bets close). New players get only the window. Then the deal,
-  an 8s insurance window when the dealer shows an ace, then turns. Human turns use a time bank with **blackjack-specific refills**:
+  an 8s insurance window when the dealer shows an ace, then turns. Human turns use a clock with **blackjack-specific refills**:
   **+30s when the turn passes to you** from someone else, **+5s for each further decision** you make in a row (hits, your next
   hand or spot), **capped at 60s**, auto-stand at 0 (`BJ_TURN_REFILL_MS`, `BJ_DECISION_REFILL_MS`, `BJ_TIME_BANK_MAX_MS`). Bots think 0.8–1.6s. Results stay up 3s (after their animation),
   then cards are swept to the tray. Bot-only tables deal one round per 20s.
@@ -255,7 +255,11 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
 - Spots you didn't bet on are released when betting closes. Rebet repeats last round's bets.
 - **Giving up a spot** (`blackjack:leave-spot`, e.g. to scale down so others can sit): during betting it's immediate and
   the bet is refunded ("Leave spot" in the bet panel); mid-round the spot plays out and is freed when the round ends
-  (the "Free a spot after this round" row, shown when you hold 2+ spots; the seat shows LAST ROUND).
+  (the "Free a spot after this round" row, shown when you hold 2+ spots, one equal column per spot; the seat shows
+  LAST ROUND). A spot given up mid-round is **blocked for you for the next betting round** (shown "Freed", Rebet skips
+  it) so someone else can take it; it opens to you again after that.
+- Bet panel: selecting a spot you've bet on puts its bet in the amount box / slider, and "Change $X" stays disabled
+  while the amount equals that bet.
 - The label under each seat after a round is the spot's **net** for the round across all its hands and insurance:
   "Won $10" (profit, not payout), "Lost $20", "Push", "Blackjack · won $15".
 - Leaving: between rounds it's immediate (pre-deal bets refunded). With hands in play it's queued ("Leave after this round"
@@ -306,7 +310,7 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
 - [x] Pure Hold'em engine: blinds/button, betting rules, side pots, showdown via pokersolver, chip-conservation fuzz test
 - [x] Player abstraction (Human/Bot), RuleBasedStrategy, LlmStrategy stub with fallback
 - [x] Rooms: bot fill to 4, closest-stack replacement, ≥2 rooms, bot-only pacing, bot stack cap (no-human tables only)
-- [x] Time bank, disconnect hold/drain/kick, seat reclaim on refresh
+- [x] Player clock, disconnect hold/drain/kick, seat reclaim on refresh
 - [x] Ready-up between hands with grace + drain + animation allowance
 - [x] Bust → 30s reload-or-leave dialog; rejoin penalties; queued irreversible cash-out with LAST HAND tag and result view
 - [x] Lobby: name entry, home, room list sortable by every column + "Open seats only", create table, buy-in dialog, stage column
@@ -317,12 +321,12 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
 - [x] Dining Dollars currency + light humor
 - [x] Black & gold sharp/flat redesign site-wide; black felt
 - [x] Shared fixed-grid table strip (identical for all players, no shifting); sidebar with static info top / controls bottom;
-      time bank + "+20s next turn" preview between turns
+      clock + "+20s next turn" preview between turns
 - [x] Git repo on `main` (history: initial commit → UI rework → UI improvements → sidebar → table/sidebar polish)
 - [x] Tests: 86 Vitest tests (poker + blackjack engines, rooms with fake timers incl. soaks); `scripts/bots.mjs` and
       `scripts/blackjack-bots.mjs` e2e
 - [x] Blackjack: engine (shoe, S17, 3:2, double/split/insurance/late surrender), BlackjackRoom (spots, bot fill 1–3,
-      betting window, insurance, time bank), lobby + table page + Pixi renderer (shoe/tray levels, deal/flip/payout/sweep/shuffle
+      betting window, insurance, clock), lobby + table page + Pixi renderer (shoe/tray levels, deal/flip/payout/sweep/shuffle
       animations), basic-strategy bots
 
 **Not done / known gaps**
@@ -381,6 +385,10 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
 - **Room tests** use `vi.useFakeTimers()` and `advanceTimersByTimeAsync`. Helpers in `PokerRoom.test.ts` create humans with
   fake connected sockets. Private methods are reached with `(room as unknown as {...})` when needed.
 - **Copy tone:** keep jokes rare (see Project goals). Amounts always go through `formatDD`.
+- **Wording: it's "your clock".** The per-player decision timer is called the **clock** everywhere players or readers see it
+  ("Your clock", "Clock full", "Not ready · clock running", "Betting on your clock"). Never "time bank" or "time reserve"
+  ("bank" clashes with the money terms: bankroll, HouseBank). Code identifiers (`timeBankMs`, `TIME_BANK_*`, the `"bank"`
+  clock kind) keep their old names.
 - **UI checks:** action buttons are `--control-h` (52px). Test at 390px wide; Fold/Check must stay visible.
   Check that nothing shifts while values change (strip cells, sidebar info, amount buttons).
 - **Git workflow:** the user asks for commits explicitly. Do feature work on a branch off `main`

@@ -22,7 +22,7 @@ export const BJ_MAX_BET_MULT = 50;
 export const BJ_ALLOWED_MIN_BETS = [10, 25, 50, 100, 500] as const;
 /** Minimums at or above this are badged "High Roller". */
 export const BJ_HIGH_ROLLER_MIN_BET = 100;
-/** Time bank: +30s when the turn passes to you from someone else, +5s for each further decision of yours, max 60s. */
+/** Clock: +30s when the turn passes to you from someone else, +5s for each further decision of yours, max 60s. */
 export const BJ_TURN_REFILL_MS = 30_000;
 export const BJ_DECISION_REFILL_MS = 5_000;
 export const BJ_TIME_BANK_MAX_MS = 60_000;
@@ -108,14 +108,14 @@ export interface BlackjackTableView {
   // ---- personal ----
   mySpots: number[];
   myBankroll: number;
-  /** Live: drains while you hold up betting on your bank. */
+  /** Live: runs while you hold up betting on your clock. */
   myTimeBankMs: number;
   /**
    * You had a bet last round and haven't pressed Deal: "window" while the betting window runs,
-   * then "bank" while bets stay open on your time bank. null otherwise.
+   * then "bank" while bets stay open on your clock. null otherwise.
    */
   myBettingClock: "window" | "bank" | null;
-  /** Betting window over: players whose time banks are keeping bets open. */
+  /** Betting window over: players whose clocks are keeping bets open. */
   waitingFor: string[];
   /** Your legal actions when one of your hands is up (double/split only if you can afford them). */
   myLegal: BlackjackLegal | null;
@@ -123,6 +123,8 @@ export interface BlackjackTableView {
   myInsurance: { spots: number[]; cost: number } | null;
   /** Last round's bets, for Rebet. */
   myLastBets: { spot: number; amount: number }[];
+  /** Spots you gave up last round: you can't bet on them in this betting round. */
+  myBlockedSpots: number[];
   amReady: boolean;
   leaveMode: LeaveMode;
   /** Humans at the table (playing or watching). */
