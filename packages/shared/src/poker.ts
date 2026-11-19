@@ -11,6 +11,22 @@ export type { LegalActions, PlayingCard, PokerAction, PokerEvent, PokerPhase, Po
 
 export type PlayerKind = "human" | "bot";
 
+/** How a bot decides: the deterministic rule-based script, or a Claude call (falls back to the script). */
+export type BotMode = "script" | "llm";
+
+/** One public betting action this hand, in order (blinds included). Same for every viewer. */
+export interface HandActionEntry {
+  street: Exclude<PokerPhase, "idle">;
+  seat: number;
+  name: string;
+  action: "sb" | "bb" | "fold" | "check" | "call" | "bet" | "raise";
+  /** Chips added by this action. */
+  amount: number;
+  /** The player's total bet on this street after the action. */
+  betTo: number;
+  allIn: boolean;
+}
+
 /** The currency: KSU Dining Dollars. Every amount in the UI goes through formatDD. */
 export const CURRENCY_NAME = "Dining Dollars";
 export const formatDD = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
@@ -68,6 +84,8 @@ export interface PokerSeatView {
   playerId: string;
   name: string;
   kind: PlayerKind;
+  /** Bots only: script or LLM (shown as a BOT / AI tag). */
+  botMode: BotMode | null;
   stack: number;
   /** Chips in front of the player on this street. */
   bet: number;
@@ -123,6 +141,8 @@ export interface PokerTableView {
   community: PlayingCard[];
   pots: Pot[];
   currentBet: number;
+  /** Every betting action of the current (or just finished) hand. Public info only. */
+  handActions: HandActionEntry[];
   seats: (PokerSeatView | null)[];
   mySeat: number | null;
   myHoleCards: PlayingCard[];

@@ -1,6 +1,6 @@
 import { gsap } from "gsap";
 import { Container, Graphics, Sprite, Text, type Application, type Texture } from "pixi.js";
-import { formatDD, describeAction, type PlayingCard, type PokerEvent, type PokerTableView, type Pot } from "@owl-in/shared";
+import { formatDD, describeAction, type PlayingCard, type PokerEvent, type PokerSeatView, type PokerTableView, type Pot } from "@owl-in/shared";
 import type { ReceivedMessage } from "../../networking/pokerStore";
 import type { PokerTextures } from "./assets";
 
@@ -50,6 +50,8 @@ interface SeatNode {
   name: Text;
   stack: Text;
   badge: Container;
+  badgeText: Text;
+  badgeFrame: Graphics;
   status: Text;
   action: Text;
   inPot: Text;
@@ -436,7 +438,7 @@ export class PokerRenderer {
       }
       node.root.visible = true;
       node.name.text = s.name;
-      node.badge.visible = s.kind === "bot";
+      this.setBadge(node, s);
       this.stacks[i] = s.stack;
       this.bets[i] = s.bet;
       this.contributed[i] = s.contributed;
@@ -511,9 +513,19 @@ export class PokerRenderer {
       node.root.visible = s !== null;
       if (!s) return;
       node.name.text = s.name;
-      node.badge.visible = s.kind === "bot";
+      this.setBadge(node, s);
       node.root.alpha = 1;
     });
+  }
+
+  /** BOT tag for script bots, gold AI tag for LLM bots, nothing for humans. */
+  private setBadge(node: SeatNode, s: PokerSeatView) {
+    node.badge.visible = s.kind === "bot";
+    if (s.kind !== "bot") return;
+    const ai = s.botMode === "llm";
+    node.badgeText.text = ai ? "AI" : "BOT";
+    node.badgeText.style.fill = ai ? GOLD : 0xcfcfcf;
+    node.badgeFrame.clear().rect(-15, -8, 30, 16).fill(INK).stroke({ width: 1, color: ai ? GOLD : MUTED });
   }
 
   /** Hand name in a dark pill so it stays readable over cards and felt. */
@@ -697,7 +709,8 @@ export class PokerRenderer {
     const badgeText = label(9, 0xcfcfcf, "600");
     badgeText.text = "BOT";
     const badge = new Container();
-    badge.addChild(new Graphics().rect(-15, -8, 30, 16).fill(INK).stroke({ width: 1, color: MUTED }), badgeText);
+    const badgeFrame = new Graphics().rect(-15, -8, 30, 16).fill(INK).stroke({ width: 1, color: MUTED });
+    badge.addChild(badgeFrame, badgeText);
     badge.position.set(62, -36);
     badge.visible = false;
     const status = label(10, MUTED, "600");
@@ -736,6 +749,8 @@ export class PokerRenderer {
       name,
       stack,
       badge,
+      badgeText,
+      badgeFrame,
       status,
       action,
       inPot,

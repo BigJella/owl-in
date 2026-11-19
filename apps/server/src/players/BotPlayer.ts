@@ -1,20 +1,33 @@
-import type { PokerAction, PokerTableView } from "@owl-in/shared";
+import type { BotMode, PokerAction, PokerTableView } from "@owl-in/shared";
 import type { PokerStrategy } from "../ai/PokerStrategy";
 import { Player } from "./Player";
 
+/**
+ * A bot seat. One class for both kinds of bot: `mode` picks the brain for each decision,
+ * so a bot can be switched between script and LLM without losing its seat, stack or name.
+ */
 export class BotPlayer extends Player {
   readonly kind = "bot" as const;
+  /** Set by the room before each turn: false at tables with no humans (LLM bots play by script there). */
+  llmAllowed = true;
 
   constructor(
     id: string,
     name: string,
-    readonly strategy: PokerStrategy,
+    readonly script: PokerStrategy,
+    readonly llm: PokerStrategy,
+    public mode: BotMode = "script",
   ) {
     super(id, name);
   }
 
   get connected() {
     return true;
+  }
+
+  /** The strategy the next decision will use. */
+  get strategy(): PokerStrategy {
+    return this.mode === "llm" && this.llmAllowed ? this.llm : this.script;
   }
 
   requestAction(view: PokerTableView, signal: AbortSignal): Promise<PokerAction> {

@@ -11,12 +11,15 @@ import {
   POKER_MAX_SEATS,
   TIME_BANK_MAX_MS,
   TIME_BANK_REFILL_MS,
+  type BotMode,
+  type HandActionEntry,
   type PokerRoomSummary,
   type SessionEndReason,
   type PokerSeatView,
   type PokerTableView,
   type TableStage,
 } from "@owl-in/shared";
+import { LlmStrategy, type CompleteFn, type LlmDecisionLog } from "../ai/LlmStrategy";
 import { RuleBasedStrategy } from "../ai/RuleBasedStrategy";
 import type { HouseBank } from "../economy/HouseBank";
 import { BotPlayer, pickBotName } from "../players/BotPlayer";
@@ -90,6 +93,14 @@ export interface PokerRoomOptions {
   /** Asked when the room has no humans at a hand boundary. */
   canClose?: (room: PokerRoom) => boolean;
   onClose?: (room: PokerRoom) => void;
+  /** LLM bots: how many of the table's bots start in LLM mode, and the model call (null = unavailable). */
+  llm?: LlmBotOptions;
+}
+
+export interface LlmBotOptions {
+  botsPerTable: number;
+  complete: CompleteFn | null;
+  log?: (entry: LlmDecisionLog) => void;
 }
 
 interface Occupant {
@@ -134,6 +145,9 @@ export class PokerRoom {
   private turnCounter = 0;
   private seq = 0;
   private lastActions: (string | null)[] = Array.from({ length: POKER_MAX_SEATS }, () => null);
+  /** Public betting log of the current hand (in every view; it's what LLM bots read for the action so far). */
+  private handActions: HandActionEntry[] = [];
+  private actionStreet: HandActionEntry["street"] = "preflop";
   private gapTimer: ReturnType<typeof setTimeout> | null = null;
   private nextHandAt: number | null = null;
   private lastHandStartedAt = -Infinity;
@@ -481,10 +495,23 @@ export class PokerRoom {
 
   private trackActions(events: PokerEvent[]) {
     const sticky = (label: string | null) => label === "Fold" || (label?.startsWith("All-in") ?? false);
+    const log = (seat: number, entry: Omit<HandActionEntry, "street" | "seat" | "name">) =>
+      this.handActions.push({ street: this.actionStreet, seat, name: this.occupants[seat]?.player.name ?? "?", ...entry });
     for (const e of events) {
-      if (e.type === "handStarted") this.lastActions.fill(null);
-      else if (e.type === "playerActed") this.lastActions[e.seat] = describeAction(e);
-      else if (e.type === "communityDealt") this.lastActions = this.lastActions.map((a) => (sticky(a) ? a : null));
+      if (e.type === "handStarted") {
+        this.lastActions.fill(null);
+        this.handActions = [];
+        this.actionStreet = "preflop";
+      } else if (e.type === "blindPosted") {
+        const action = e.seat === this.table.smallBlindSeat ? "sb" : "bb";
+        log(e.seat, { action, amount: e.amount, betTo: e.amount, allIn: e.stack === 0 });
+      } else if (e.type === "playerActed") {
+        this.lastActions[e.seat] = describeAction(e);
+        log(e.seat, { action: e.action, amount: e.amount, betTo: e.bet, allIn: e.allIn });
+      } else if (e.type === "communityDealt") {
+        this.actionStreet = e.street;
+        this.lastActions = this.lastActions.map((a) => (sticky(a) ? a : null));
+      }
       else if (e.type === "potAwarded") {
         for (const { seat, amount } of e.winners) {
           const previous = Number(this.lastActions[seat]?.match(/^Wins \$([\d,]+)/)?.[1]?.replace(/,/g, "") ?? 0);
@@ -522,17 +549,34 @@ export class PokerRoom {
 
     turn.timers.push(setTimeout(() => this.finishTurn(id, this.table.defaultAction(seat), true), turn.budgetMs));
 
-    const ask = () => {
-      occ.player
-        .requestAction(this.viewFor(occ.player.id), turn.abort.signal)
-        .then((action) => this.finishTurn(id, action, false))
-        .catch(() => {
-          // Aborted (turn already over) or the strategy threw: fall back to check/fold.
-          if (!turn.abort.signal.aborted) this.finishTurn(id, this.table.defaultAction(seat), false);
-        });
+    if (occ.player instanceof BotPlayer) occ.player.llmAllowed = this.hasHumans();
+    // Bots are asked right away (an LLM call overlaps the "thinking" pause); the answer is
+    // applied once the pause is over, so script bots look exactly as before.
+    let thought = !bot;
+    let answer: PokerAction | null = null;
+    const apply = () => {
+      if (thought && answer) this.finishTurn(id, answer, false);
     };
-    if (bot) turn.timers.push(setTimeout(ask, thinkMs));
-    else ask();
+    if (bot) {
+      turn.timers.push(
+        setTimeout(() => {
+          thought = true;
+          apply();
+        }, thinkMs),
+      );
+    }
+    occ.player
+      .requestAction(this.viewFor(occ.player.id), turn.abort.signal)
+      .then((action) => {
+        answer = action;
+        apply();
+      })
+      .catch(() => {
+        // Aborted (turn already over) or the strategy threw: fall back to check/fold.
+        if (turn.abort.signal.aborted) return;
+        answer = this.table.defaultAction(seat);
+        apply();
+      });
   }
 
   private finishTurn(id: number, action: PokerAction, timedOut: boolean) {
@@ -627,11 +671,30 @@ export class PokerRoom {
     while (bots.length < target && this.table.emptySeats().length > 0) {
       const seat = this.table.emptySeats()[0]!;
       const names = this.occupants.flatMap((o) => (o ? [o.player.name] : []));
-      const bot = new BotPlayer(`bot-${++botCounter}`, pickBotName(names), new RuleBasedStrategy());
+      const bot = this.createBot(pickBotName(names));
       this.table.seatPlayer(seat, bot.id, this.bank.withdraw(botStack));
       this.occupants[seat] = { player: bot, timeBankMs: 0, leaving: false, disconnectedAt: null, dropTimer: null, ready: true, drainSince: null, rebuyDeadline: null, cashingOut: false };
       bots = this.botSeats();
     }
+  }
+
+  private createBot(name: string): BotPlayer {
+    const script = new RuleBasedStrategy();
+    const llm = this.options.llm;
+    const llmBots = this.occupants.filter((o) => o?.player instanceof BotPlayer && o.player.mode === "llm").length;
+    const mode: BotMode = llm && llmBots < llm.botsPerTable ? "llm" : "script";
+    return new BotPlayer(`bot-${++botCounter}`, name, script, new LlmStrategy(script, llm?.complete ?? null, llm?.log), mode);
+  }
+
+  /** Switch one bot between script and LLM (admin). Takes effect from its next decision. */
+  setBotMode(botId: string, mode: BotMode): boolean {
+    const occ = this.occupants.find((o) => o?.player.id === botId);
+    if (!occ || !(occ.player instanceof BotPlayer)) return false;
+    if (occ.player.mode !== mode) {
+      occ.player.mode = mode;
+      this.broadcast([]);
+    }
+    return true;
   }
 
   private removeOccupant(seat: number, reason: SessionEndReason = "left") {
@@ -789,6 +852,7 @@ export class PokerRoom {
         playerId: occ.player.id,
         name: occ.player.name,
         kind: occ.player.kind,
+        botMode: occ.player instanceof BotPlayer ? occ.player.mode : null,
         stack: s.stack,
         bet: s.bet,
         contributed: s.inHand ? s.contributed : 0,
@@ -839,6 +903,7 @@ export class PokerRoom {
       community: [...t.community],
       pots: t.pots.map((p) => ({ amount: p.amount, eligibleSeats: [...p.eligibleSeats] })),
       currentBet: t.currentBet,
+      handActions: this.handActions.map((a) => ({ ...a })),
       seats,
       mySeat,
       myHoleCards: me?.inHand ? [...me.holeCards] : [],

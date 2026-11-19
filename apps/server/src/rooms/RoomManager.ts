@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
-import type { PokerRoomSummary } from "@owl-in/shared";
+import type { BotMode, PokerRoomSummary } from "@owl-in/shared";
 import type { HouseBank } from "../economy/HouseBank";
 import type { StatsStore } from "../stats/StatsStore";
 import type { HumanPlayer } from "../players/HumanPlayer";
-import { PokerRoom, type RoomTiming } from "./PokerRoom";
+import { PokerRoom, type LlmBotOptions, type RoomTiming } from "./PokerRoom";
 
 export const MIN_OPEN_ROOMS = 2;
 
@@ -12,6 +12,8 @@ export interface RoomManagerOptions {
   /** Career stats store shared by every room. */
   stats?: StatsStore;
   timing?: Partial<RoomTiming>;
+  /** LLM bot settings shared by every room (none = all bots script). */
+  llm?: LlmBotOptions;
   /** Called (batched per tick) whenever the room list changes. */
   onRoomsChanged?: (rooms: PokerRoomSummary[]) => void;
 }
@@ -36,6 +38,7 @@ export class RoomManager {
       bank: this.options.bank,
       ...(this.options.stats ? { stats: this.options.stats } : {}),
       ...(this.options.timing ? { timing: this.options.timing } : {}),
+      ...(this.options.llm ? { llm: this.options.llm } : {}),
       onChange: () => this.publish(),
       canClose: () => this.rooms.size > MIN_OPEN_ROOMS,
       onClose: (closed) => {
@@ -69,6 +72,12 @@ export class RoomManager {
     let count = 0;
     for (const room of this.rooms.values()) count += room.humanCount() + room.waitingCount();
     return count;
+  }
+
+  /** Switch a bot between script and LLM, wherever it sits (for the admin panel). */
+  setBotMode(botId: string, mode: BotMode): boolean {
+    for (const room of this.rooms.values()) if (room.setBotMode(botId, mode)) return true;
+    return false;
   }
 
   shutdown() {

@@ -91,8 +91,12 @@ TypeScript monorepo with npm workspaces. Node 26, npm 12, Windows (bash + PowerS
 | `npm run build` | Vite production build of the client (a >500 kB chunk warning from PixiJS is expected) |
 | `node scripts/bots.mjs [url] [hands] [clients]` | End-to-end smoke test: N socket clients play real hands; checks bot replacement, no hole-card leaks, rebuys |
 | `node scripts/blackjack-bots.mjs [url] [rounds] [clients]` | Blackjack e2e smoke: clients bet (one takes a bot's spot) and play random legal actions; checks bots only in spots 1–3, ≤3 spots each, no dealer hole-card leak |
+| `OWL_LLM_BOTS=2 npm run dev` | Same, with 2 of each table's bots driven by Claude (see **LLM bots** below); overrides `.env` for one run |
 | `node scripts/generate-placeholder-cards.mjs` | Regenerates placeholder card/chip SVGs into `apps/client/public/assets` |
 
+- **Server settings live in `apps/server/.env`** (git-ignored; copy `apps/server/.env.example`). The server's `dev` / `start`
+  scripts load it with `--env-file-if-exists`; real environment variables win. Long term, machine settings (CLI path,
+  timeout) stay in `.env` and game settings (LLM bots per table, per-bot mode) move to the database, edited from the admin panel.
 - Server runs TypeScript directly via `tsx` (no build step). Workspace packages export raw `.ts` (`"exports": "./src/index.ts"`).
 - LAN play: open `http://<pc-ip>:5173`. The client connects to `http://<same-host>:3000` (override with `VITE_SERVER_URL`).
   Windows Firewall may prompt for Node.
@@ -137,7 +141,8 @@ apps/
     src/index.ts              Wires registry, house bank, room manager, socket handlers
     src/networking/handlers/connectionHandler.ts  All socket events, zod-validated
     src/players/              Player (abstract) → HumanPlayer, BotPlayer; PlayerRegistry (token → human)
-    src/ai/                   PokerStrategy interface, RuleBasedStrategy (deterministic), LlmStrategy (stub);
+    src/ai/                   PokerStrategy interface, RuleBasedStrategy (deterministic), LlmStrategy (prompt + parse + fallback),
+                              claudeCli (headless `claude -p` CompleteFn), llmConfig (OWL_LLM_* env vars);
                               BlackjackStrategy interface, BasicStrategy (6-deck S17 DAS LS chart)
     src/rooms/PokerRoom.ts    The table loop: turns, clocks, ready-up, bot seating/pacing, cash-outs, penalties, views
     src/rooms/RoomManager.ts  Create/list rooms, keeps ≥2 open, batches room-list pushes
@@ -175,8 +180,14 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
   The server sends `{ view, events, seq }`. The renderer animates the events, then calls `sync(view)`. When messages back up
   it speeds the timeline up, and it only jumps to the end once it's more than 3 messages behind.
 - **Player abstraction.** On every turn the room calls `player.requestAction(view, abortSignal)` and races it against the clock.
-  Humans resolve the promise from a socket message; bots resolve it from `strategy.decide(view)`. To plug in an LLM,
-  implement `PokerStrategy` (see `LlmStrategy` and its `CompleteFn`); it falls back to the rule-based strategy on error or timeout.
+  Humans resolve the promise from a socket message; bots resolve it from their strategy. Bots are asked **at turn start**
+  and the answer is applied once their "thinking" pause is over (so an LLM call overlaps the pause).
+- **One bot class, two modes.** `BotPlayer` holds a `script` (RuleBasedStrategy) and an `llm` (LlmStrategy) strategy and a
+  mutable `mode: "script" | "llm"` (`BotMode` in shared). The mode is read per decision, so `PokerRoom.setBotMode` /
+  `RoomManager.setBotMode(botId, mode)` (the hook for the future admin panel) switch a seated bot without re-seating it.
+  `PokerSeatView.botMode` shows it to clients.
+- **Hand action log.** `PokerTableView.handActions` lists every public betting action of the hand (blinds included, by street).
+  Everyone gets the same log; it's what the LLM reads as "the action so far".
 - **One Pixi app.** Creating and destroying a Pixi Application per page visit froze browsers (leaked WebGL contexts, plus a
   teardown-order crash). Keep using `getPixiApp()`.
 - **pokerStore keeps the last state after `poker:left`.** This lets a cashed-out player watch their final hand.
@@ -195,6 +206,20 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
 - At least **2 rooms** are always open. The server seeds "Freshman Meal Plan" ($5/$10) and "Unlimited Swipes" ($50/$100).
   An empty extra room closes at its next gap.
 - Bot-only rooms play **1 hand per minute**.
+
+**LLM bots (agreed with the user, keep these)**
+- Two bot types in one class: **script** (deterministic rule-based) and **LLM** (Claude). Switchable per bot (admin panel later).
+- An LLM decision runs the local **Claude Code CLI headlessly**, one process per decision: `claude -p --model <model>
+  --output-format json --json-schema <action schema> --tools "" --strict-mcp-config --setting-sources "" --no-session-persistence`.
+  The prompt goes on stdin; the action comes back in `structured_output` (`{type, to?}`). ~2–6s with Haiku, ~$0.0006 per call.
+- The prompt is **only** what the seat sees: own hole cards, board, each player's stack / bet / in-pot / status / position,
+  and `handActions`. **No long-term memory and no reasoning text** (token cost); both are possible later.
+- Any failure (CLI missing, timeout, bad JSON) falls back to the script for that decision; `legalize()` clamps every answer.
+  The server logs one `[llm]` line per decision (latency, fallback reason).
+- **Env vars:** `OWL_LLM_BOTS` = how many of each table's bots are seated in LLM mode (`0`–`4` or `all`, **default 0**),
+  `OWL_LLM_MODEL` (default `claude-haiku-5-5`), `OWL_LLM_TIMEOUT_MS` (15000), `OWL_CLAUDE_BIN` (`claude`).
+- **LLM bots play by script at tables with no humans** (seated or waiting), so bot-only rooms spend no tokens.
+- UI: LLM bots' seat plates carry a gold **AI** tag (script bots: grey **BOT**); the strip's "To act" cell shows a small AI tag.
 
 **Money**
 - Every name gets **$10,000 Dining Dollars**, held in server memory only (a restart resets everything).
@@ -330,7 +355,7 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
 - [x] Shared fixed-grid table strip (identical for all players, no shifting); sidebar with static info top / controls bottom;
       clock + "+20s next turn" preview between turns
 - [x] Git repo on `main` (history: initial commit → UI rework → UI improvements → sidebar → table/sidebar polish)
-- [x] Tests: 86 Vitest tests (poker + blackjack engines, rooms with fake timers incl. soaks); `scripts/bots.mjs` and
+- [x] Tests: 108 Vitest tests (poker + blackjack engines, rooms with fake timers incl. soaks); `scripts/bots.mjs` and
       `scripts/blackjack-bots.mjs` e2e
 - [x] Blackjack: engine (shoe, S17, 3:2, double/split/insurance/late surrender), BlackjackRoom (spots, bot fill 1–3,
       betting window, insurance, clock), lobby + table page + Pixi renderer (shoe/tray levels, deal/flip/payout/sweep/shuffle
@@ -338,7 +363,7 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
 
 **Not done / known gaps**
 - [ ] Real card and chip art (placeholders are SVGs; swap the files and keep the names, change `CARD_EXT` for PNGs)
-- [ ] LLM bots (wire `CompleteFn` in `LlmStrategy` to the Claude API and pick which bots use it)
+- [x] LLM bots: headless Claude Code CLI per decision, script/LLM mode per bot, `OWL_LLM_BOTS`, AI tag, script fallback
 - [x] Career page (rates, totals, vs players/bots, table history with every hand) and leaderboard (by Dining Dollars),
       public/private careers
 - [ ] Persistence (bankrolls, penalties, rooms and career stats are in memory; a server restart wipes them)
@@ -351,9 +376,8 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
 
 1. **Hackathon MVP: done.** Multiplayer Hold'em with deterministic bots, polished table, LAN play.
 2. **AI players (the hackathon centerpiece).**
-   - Implement `CompleteFn` with the Anthropic SDK in `apps/server/src/ai/LlmStrategy.ts`.
-     Use the latest Claude models, and load the `claude-api` skill before writing that code.
-   - Give bots personalities (tight/loose/aggressive) through prompts. Mix LLM and rule-based bots per table.
+   - Done: LLM bots via the headless Claude Code CLI (`claudeCli.ts`), mixed with script bots per table.
+   - Give bots personalities (tight/loose/aggressive) through prompts.
    - Optional: show a bot's one-line "reasoning" or table talk after its action (only public info, never hole cards).
    - Respect the time budget: the room aborts slow decisions and falls back automatically.
 3. **Persistence & identity.** SQLite (e.g. Drizzle) for bankrolls, penalties and career stats / hand history
@@ -366,8 +390,9 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
 
 ## Next steps (add new items here)
 
-- [ ] Wire `LlmStrategy` to the Claude API behind an env var (e.g. `ANTHROPIC_API_KEY`). Keep `RuleBasedStrategy` as the fallback
-- [ ] Decide how many bots per table are LLM-driven, and show which ones in the UI (e.g. a different badge)
+- [ ] Admin panel: switch individual bots between script and LLM (call `RoomManager.setBotMode`; no socket event exists yet)
+- [ ] LLM bots: optional one-line reasoning / table talk (costs tokens), long-term opponent memory, personalities
+- [ ] LLM bots: a waiting human replaces the closest-stack bot, which may be an LLM bot; refills seat LLM bots again up to `OWL_LLM_BOTS`
 - [ ] Replace placeholder card SVGs with real art
 - [ ] Implement `StatsStore` (and bankroll storage) on SQLite so careers survive restarts
 - [ ] Names are reserved for the whole server run: someone who loses their browser data can't reclaim their name until
