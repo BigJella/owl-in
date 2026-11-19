@@ -103,6 +103,7 @@ const total = (cards: PlayingCard[]) => {
 export class BlackjackRenderer {
   private readonly root = new Container();
   private readonly felt = new Graphics();
+  private readonly feltLabels = new Container();
   private readonly shoeGfx = new Graphics();
   private readonly trayGfx = new Graphics();
   private readonly dealerCards: Sprite[] = [];
@@ -154,7 +155,7 @@ export class BlackjackRenderer {
 
     for (let spot = 0; spot < BJ_SPOTS; spot += 1) this.nodes.push(this.makeSpot(spot));
 
-    this.root.addChild(this.felt, this.shoeGfx, this.trayGfx, this.spotsLayer, this.cardsLayer, this.pillsLayer, this.dealerPill, this.message, this.fx);
+    this.root.addChild(this.felt, this.feltLabels, this.shoeGfx, this.trayGfx, this.spotsLayer, this.cardsLayer, this.pillsLayer, this.dealerPill, this.message, this.fx);
     this.app.stage.addChild(this.root);
     this.app.renderer.on("resize", this.fit);
     this.app.ticker.add(this.tick);
@@ -725,27 +726,17 @@ export class BlackjackRenderer {
     g.moveTo(CX - 566, TOP).arc(CX, TOP, 566, Math.PI, 0, true).stroke({ width: 1, color: GOLD, alpha: 0.5 });
     // The felt print: an arc of rules text between the dealer and the spots.
     g.moveTo(CX + 300 * Math.cos(Math.PI / 7), TOP + 300 * Math.sin(Math.PI / 7)).arc(CX, TOP, 300, Math.PI / 7, (6 * Math.PI) / 7).stroke({ width: 1, color: 0x262626 });
-    const pays = label(20, GOLD_DIM, "600");
-    pays.text = "BLACKJACK PAYS 3 TO 2";
-    pays.style.letterSpacing = 4;
-    pays.position.set(CX, 248);
-    const rules = label(12, MUTED, "500");
-    rules.text = "DEALER STANDS ON ALL 17S   ·   INSURANCE PAYS 2 TO 1";
-    rules.style.letterSpacing = 2;
-    rules.position.set(CX, 274);
-    const shoe = label(10, MUTED, "600");
-    shoe.text = "SHOE";
-    shoe.style.letterSpacing = 2;
-    shoe.position.set(SHOE.x, SHOE.y + SHOE.h / 2 + 12);
-    const tray = label(10, MUTED, "600");
-    tray.text = "DISCARDS";
-    tray.style.letterSpacing = 2;
-    tray.position.set(TRAY.x, TRAY.y + TRAY.h / 2 + 12);
-    const dealer = label(11, MUTED, "600");
-    dealer.text = "DEALER";
-    dealer.style.letterSpacing = 3;
-    dealer.position.set(CX, 42);
-    this.root.addChild(pays, rules, shoe, tray, dealer);
+    // Tiny labels under the shoe and the discard tray. They live in their own layer above the felt.
+    for (const [text, box] of [
+      ["SHOE", SHOE],
+      ["DISCARD", TRAY],
+    ] as const) {
+      const t = label(9, MUTED, "500");
+      t.text = text;
+      t.style.letterSpacing = 1.5;
+      t.position.set(box.x, box.y + box.h / 2 + 10);
+      this.feltLabels.addChild(t);
+    }
   }
 
   private makeSpot(spot: number): SpotNode {
