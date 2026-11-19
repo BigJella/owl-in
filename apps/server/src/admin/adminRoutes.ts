@@ -69,6 +69,7 @@ export function adminRoutes(admin: AdminService): Router {
 
   router.get("/players", handle(() => admin.players()));
   router.get("/players/:id/career", handle((r) => admin.career(param(r, "id"))));
+  router.get("/players/:id/sessions/:sessionId", handle((r) => admin.sessionHands(param(r, "id"), param(r, "sessionId"))));
   router.post("/players/:id/kick", handle((r) => admin.kick(param(r, "id"), body(kickSchema, r).timeoutMinutes ?? 0)));
   router.post("/players/:id/ban", handle((r) => admin.ban(param(r, "id"), body(banSchema, r).reason?.trim() || null)));
   router.post("/players/:id/unban", handle((r) => admin.unban(param(r, "id"))));

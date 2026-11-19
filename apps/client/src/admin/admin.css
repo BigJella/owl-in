@@ -140,3 +140,11 @@
   .adm-player, .adm-timeout, .adm-log, .adm-seat { min-width: 760px; }
   .adm-search { width: 100%; }
 }
+
+/* Player career (Players tab → a name) */
+.adm-link { background: none; border: 0; padding: 0; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.adm-link:hover, .adm-link:focus-visible { color: var(--gold); text-decoration: underline; text-underline-offset: 3px; }
+.adm-career .back { margin-bottom: 14px; }
+.adm-career-head { margin-bottom: 4px; }
+.adm-career-head .adm-h { color: var(--text); font-size: 22px; letter-spacing: 2px; }
+.adm-career-where { margin: 0 0 18px; }

@@ -250,7 +250,10 @@ function BlackjackRounds({ rounds }: { rounds: BlackjackRoundRecord[] }) {
 }
 
 /** One table visit; click to load its hands. */
-function SessionRow({ session, playerId }: { session: TableSession; playerId: string | null }) {
+/** Loads one table session's hands (the player site uses the socket, the admin panel the management API). */
+export type LoadSession = (sessionId: string) => Promise<HandRecord[]>;
+
+function SessionRow({ session, loadSession }: { session: TableSession; loadSession: LoadSession }) {
   const [open, setOpen] = useState(false);
   const [hands, setHands] = useState<HandRecord[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -259,10 +262,7 @@ function SessionRow({ session, playerId }: { session: TableSession; playerId: st
     const next = !open;
     setOpen(next);
     if (next) {
-      socket.emit("career:session", { playerId, sessionId: session.id }, (result) => {
-        if (result.ok) setHands(result.hands);
-        else setError(result.error);
-      });
+      loadSession(session.id).then(setHands, (e: unknown) => setError(e instanceof Error ? e.message : "Couldn't load the hands."));
     }
   }
 
@@ -309,71 +309,10 @@ function SessionRow({ session, playerId }: { session: TableSession; playerId: st
   );
 }
 
-export function CareerPage(props: { playerId: string | null; onBack: () => void; onPrivacyChanged: (isPublic: boolean) => void }) {
-  const { playerId, onBack, onPrivacyChanged } = props;
-  const [career, setCareer] = useState<CareerView | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const load = () =>
-      socket.emit("career:get", playerId, (result) => {
-        if (result.ok) {
-          setCareer(result.career);
-          setError(null);
-        } else setError(result.error);
-      });
-    load();
-    const id = window.setInterval(load, 10_000);
-    return () => window.clearInterval(id);
-  }, [playerId]);
-
-  function setPrivacy(isPublic: boolean) {
-    socket.emit("career:set-privacy", isPublic, (result) => {
-      if (!result.ok) return setError(result.error);
-      onPrivacyChanged(isPublic);
-      setCareer((c) => (c ? { ...c, isPublic } : c));
-    });
-  }
-
-  const back = <button className="back" onClick={onBack}>{playerId ? "← Leaderboard" : "← Games"}</button>;
-  if (!career) {
-    return (
-      <section className="lobby">
-        {back}
-        <div className="hero room-hero">
-          <div>
-            <p className="eyebrow">CAREER</p>
-            {error ? <p className="form-error">{error}</p> : <p className="muted">Loading…</p>}
-          </div>
-        </div>
-      </section>
-    );
-  }
-
-  const c = career;
+/** Everything below the career page's header: totals, chip chart, game panels and table history. */
+export function CareerDetails({ career: c, loadSession }: { career: CareerView; loadSession: LoadSession }) {
   return (
-    <section className="lobby career">
-      {back}
-      <div className="hero room-hero">
-        <div>
-          <p className="eyebrow">{c.isMe ? "YOUR CAREER" : "CAREER"}</p>
-          <h1>{c.name}</h1>
-          <div className="career-tags">
-            <span className="online">
-              <i className={c.online ? "" : "off"} /> {c.online ? "Online" : "Offline"}
-            </span>
-            {!c.isMe && <span className="tag">{c.isPublic ? "Public" : "Private"}</span>}
-          </div>
-        </div>
-        {c.isMe && (
-          <div className="privacy-choice">
-            <small>Career visibility</small>
-            <PrivacyToggle value={c.isPublic} onChange={setPrivacy} />
-          </div>
-        )}
-      </div>
-      {error && <p className="form-error lobby-error">{error}</p>}
-
+    <>
       <div className="career-summary">
         <div>
           <small>Dining Dollars</small>
@@ -423,12 +362,87 @@ export function CareerPage(props: { playerId: string | null; onBack: () => void;
             </thead>
             <tbody>
               {c.sessions.map((s) => (
-                <SessionRow key={s.id} session={s} playerId={playerId} />
+                <SessionRow key={s.id} session={s} loadSession={loadSession} />
               ))}
             </tbody>
           </table>
         </div>
       )}
+    </>
+  );
+}
+
+export function CareerPage(props: { playerId: string | null; onBack: () => void; onPrivacyChanged: (isPublic: boolean) => void }) {
+  const { playerId, onBack, onPrivacyChanged } = props;
+  const [career, setCareer] = useState<CareerView | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const load = () =>
+      socket.emit("career:get", playerId, (result) => {
+        if (result.ok) {
+          setCareer(result.career);
+          setError(null);
+        } else setError(result.error);
+      });
+    load();
+    const id = window.setInterval(load, 10_000);
+    return () => window.clearInterval(id);
+  }, [playerId]);
+
+  function setPrivacy(isPublic: boolean) {
+    socket.emit("career:set-privacy", isPublic, (result) => {
+      if (!result.ok) return setError(result.error);
+      onPrivacyChanged(isPublic);
+      setCareer((c) => (c ? { ...c, isPublic } : c));
+    });
+  }
+
+  const loadSession: LoadSession = (sessionId) =>
+    new Promise((resolve, reject) =>
+      socket.emit("career:session", { playerId, sessionId }, (result) => (result.ok ? resolve(result.hands) : reject(new Error(result.error)))),
+    );
+
+  const back = <button className="back" onClick={onBack}>{playerId ? "← Leaderboard" : "← Games"}</button>;
+  if (!career) {
+    return (
+      <section className="lobby">
+        {back}
+        <div className="hero room-hero">
+          <div>
+            <p className="eyebrow">CAREER</p>
+            {error ? <p className="form-error">{error}</p> : <p className="muted">Loading…</p>}
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  const c = career;
+  return (
+    <section className="lobby career">
+      {back}
+      <div className="hero room-hero">
+        <div>
+          <p className="eyebrow">{c.isMe ? "YOUR CAREER" : "CAREER"}</p>
+          <h1>{c.name}</h1>
+          <div className="career-tags">
+            <span className="online">
+              <i className={c.online ? "" : "off"} /> {c.online ? "Online" : "Offline"}
+            </span>
+            {!c.isMe && <span className="tag">{c.isPublic ? "Public" : "Private"}</span>}
+          </div>
+        </div>
+        {c.isMe && (
+          <div className="privacy-choice">
+            <small>Career visibility</small>
+            <PrivacyToggle value={c.isPublic} onChange={setPrivacy} />
+          </div>
+        )}
+      </div>
+      {error && <p className="form-error lobby-error">{error}</p>}
+
+      <CareerDetails career={c} loadSession={loadSession} />
     </section>
   );
 }

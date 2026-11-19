@@ -1,4 +1,4 @@
-import type { AdminSnapshot, LlmStats } from "@owl-in/shared";
+import type { AdminSnapshot, CareerView, HandRecord, LlmStats } from "@owl-in/shared";
 
 /** Same server the player site uses. The API only answers requests from this computer. */
 const BASE = `${import.meta.env.VITE_SERVER_URL ?? `${location.protocol}//${location.hostname}:3000`}/api/admin`;
@@ -32,6 +32,8 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 export const api = {
   snapshot: () => request<AdminSnapshot>("GET", "/snapshot"),
+  career: (playerId: string) => request<CareerView>("GET", `/players/${playerId}/career`),
+  sessionHands: (playerId: string, sessionId: string) => request<HandRecord[]>("GET", `/players/${playerId}/sessions/${sessionId}`),
   llm: (limit = 200) => request<LlmStats>("GET", `/llm?limit=${limit}`),
   createTable: (body: { game: "poker" | "blackjack"; name: string; bigBlind?: number; minBet?: number; maxBots?: number; maxAi?: number }) =>
     request("POST", "/tables", body),

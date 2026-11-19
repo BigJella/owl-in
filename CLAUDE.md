@@ -244,7 +244,8 @@ it/owl-live/index.html        The itcan.do chat query page (live stats strip, ch
 **Admin & moderation (agreed with the user, keep these)**
 - **Admin panel** at `localhost:5173/admin.html`, **this computer only**. Separate from the player site (no socket, no identity).
   Tabs: Overview (money with a conservation check, people, AI stats), Tables (create; per-table max bots / max AI; close;
-  per-bot Auto / Script / AI), Players (kick, timeout, bankroll, rename, ban/unban), Timeouts, AI log. Polls `/snapshot` every 1s.
+  per-bot Auto / Script / AI), Players (kick, timeout, bankroll, rename, ban/unban; click a name for their full career: the
+  Career page's `CareerDetails` with the same actions on top, private careers included), Timeouts, AI log. Polls `/snapshot` every 1s.
 - **Kick:** like a cash-out (queued mid-hand / mid-round), with an optional per-table timeout (0 = none).
 - **Ban** is by browser token (the identity): removed from their table, disconnected, refused at connect and at `identify`
   (`code: "banned"`); the client shows a plain "You've been banned" screen. Unban lifts it. Clearing site data dodges it
@@ -459,6 +460,7 @@ header `X-Owl-Admin: 1`**. Responses never contain browser tokens, IPs or hidden
 | `POST /tables/:id/close` | Close after the current hand / round |
 | `POST /bots/:id/mode` | `{mode: "auto" \| "script" \| "llm"}` (poker bots) |
 | `GET /players/:id/career` | Their career, exactly what the in-game Career page shows (`careerView`, viewer = admin; private careers too; no cards): totals, `poker` / `blackjack` stats, sessions, `chipHistory` (total after every hand) |
+| `GET /players/:id/sessions/:sessionId` | One table session's hands (the history rows' expansion); unshown poker hole cards are `null` |
 | `POST /players/:id/kick` | `{timeoutMinutes?}` |
 | `POST /players/:id/ban` · `/unban` | `{reason?}` |
 | `POST /players/:id/bankroll` | `{delta}` (whole Dining Dollars, ±) |

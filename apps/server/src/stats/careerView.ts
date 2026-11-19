@@ -30,10 +30,10 @@ export function careerView(stats: StatsStore, target: HumanPlayer, viewer: Human
 }
 
 /**
- * A session's hands as `viewer` may see them. Other people's poker hole cards are hidden unless they were shown at
+ * A session's hands as `viewer` may see them (null = the management API, which sees no hidden cards either). Other people's poker hole cards are hidden unless they were shown at
  * a showdown (folds and uncalled bluffs stay secret); blackjack cards are always public.
  */
-export function sessionHandsFor(stats: StatsStore, target: HumanPlayer, viewer: HumanPlayer, sessionId: string): HandRecord[] {
+export function sessionHandsFor(stats: StatsStore, target: HumanPlayer, viewer: HumanPlayer | null, sessionId: string): HandRecord[] {
   return stats
     .sessionHands(target.id, sessionId)
     .map((h) =>

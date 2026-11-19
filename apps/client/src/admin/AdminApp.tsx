@@ -10,8 +10,10 @@ import {
   type AdminSnapshot,
   type AdminTable,
   type AdminTimeout,
+  type CareerView,
   type LlmStats,
 } from "@owl-in/shared";
+import { CareerDetails } from "../pages/CareerPage";
 import { api, ApiError, isLocalPage } from "./api";
 
 type Tab = "overview" | "tables" | "players" | "timeouts" | "ai";
@@ -462,6 +464,9 @@ function CreateTableDialog({ run, close }: { run: Run; close: () => void }) {
 
 function Players({ s, run, open, close }: ActionProps) {
   const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState<string | null>(null);
+  const chosen = selected ? s.players.find((p) => p.id === selected) : undefined;
+  if (chosen) return <PlayerCareer p={chosen} s={s} run={run} open={open} close={close} onBack={() => setSelected(null)} />;
   const players = s.players.filter((p) => p.name.toLowerCase().includes(query.trim().toLowerCase()));
   return (
     <>
@@ -479,7 +484,7 @@ function Players({ s, run, open, close }: ActionProps) {
           <span className="adm-actions">Actions</span>
         </div>
         {players.map((p) => (
-          <PlayerRow key={p.id} p={p} s={s} run={run} open={open} close={close} />
+          <PlayerRow key={p.id} p={p} s={s} run={run} open={open} close={close} onSelect={() => setSelected(p.id)} />
         ))}
         {players.length === 0 && <p className="adm-empty muted">{s.players.length === 0 ? "Nobody has picked a name yet." : "No match."}</p>}
       </div>
@@ -487,12 +492,12 @@ function Players({ s, run, open, close }: ActionProps) {
   );
 }
 
-function PlayerRow({ p, s, run, open, close }: ActionProps & { p: AdminPlayer }) {
+function PlayerRow({ p, s, run, open, close, onSelect }: ActionProps & { p: AdminPlayer; onSelect: () => void }) {
   return (
     <div className="adm-player">
       <span className="adm-player-name">
         <span className={`adm-dot ${p.online ? "on" : ""}`} title={p.online ? "Online" : "Offline"} />
-        <span className="adm-ellipsis" title={p.name}>{p.name}</span>
+        <button className="adm-link adm-ellipsis" title={`${p.name}: career and hand history`} onClick={onSelect}>{p.name}</button>
         {p.banned && <span className="tag danger">Banned</span>}
         {!p.banned && p.timeout && <span className="tag danger" title={p.timeout.reason ?? undefined}>Timed out</span>}
       </span>
@@ -500,24 +505,69 @@ function PlayerRow({ p, s, run, open, close }: ActionProps & { p: AdminPlayer })
       <span className="num">{formatDD(p.bankroll)}</span>
       <span className="num">{p.atTable > 0 ? formatDD(p.atTable) : "—"}</span>
       <span className="num gold">{formatDD(p.total)}</span>
-      <span className="adm-actions">
-        <button className="secondary adm-small" disabled={!p.table} onClick={() => open(<KickDialog p={p} run={run} close={close} />)}>Kick</button>
-        <button className="secondary adm-small" onClick={() => open(<TimeoutDialog s={s} playerId={p.id} run={run} close={close} />)}>Timeout</button>
-        <button className="secondary adm-small" onClick={() => open(<BankrollDialog p={p} run={run} close={close} />)}>$</button>
-        <button className="secondary adm-small" onClick={() => open(<RenameDialog p={p} run={run} close={close} />)}>Rename</button>
-        {p.banned ? (
-          <button
-            className="secondary adm-small"
-            onClick={() =>
-              open(<Confirm title={`Unban ${p.name}?`} body="They can sign in and play again." confirm="Unban" onConfirm={() => run(() => api.unban(p.id), `${p.name} unbanned`)} close={close} />)
-            }
-          >
-            Unban
-          </button>
-        ) : (
-          <button className="secondary adm-small adm-danger" onClick={() => open(<BanDialog p={p} run={run} close={close} />)}>Ban</button>
-        )}
-      </span>
+      <PlayerActions p={p} s={s} run={run} open={open} close={close} />
+    </div>
+  );
+}
+
+function PlayerActions({ p, s, run, open, close }: ActionProps & { p: AdminPlayer }) {
+  return (
+  <span className="adm-actions">
+    <button className="secondary adm-small" disabled={!p.table} onClick={() => open(<KickDialog p={p} run={run} close={close} />)}>Kick</button>
+    <button className="secondary adm-small" onClick={() => open(<TimeoutDialog s={s} playerId={p.id} run={run} close={close} />)}>Timeout</button>
+    <button className="secondary adm-small" onClick={() => open(<BankrollDialog p={p} run={run} close={close} />)}>$</button>
+    <button className="secondary adm-small" onClick={() => open(<RenameDialog p={p} run={run} close={close} />)}>Rename</button>
+    {p.banned ? (
+      <button
+        className="secondary adm-small"
+        onClick={() =>
+          open(<Confirm title={`Unban ${p.name}?`} body="They can sign in and play again." confirm="Unban" onConfirm={() => run(() => api.unban(p.id), `${p.name} unbanned`)} close={close} />)
+        }
+      >
+        Unban
+      </button>
+    ) : (
+      <button className="secondary adm-small adm-danger" onClick={() => open(<BanDialog p={p} run={run} close={close} />)}>Ban</button>
+    )}
+  </span>
+  );
+}
+
+/** One player's full career (the in-game Career page's content), with the moderation actions on top. */
+function PlayerCareer({ p, s, run, open, close, onBack }: ActionProps & { p: AdminPlayer; onBack: () => void }) {
+  const [career, setCareer] = useState<CareerView | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    const load = () =>
+      api.career(p.id).then(
+        (c) => live && (setCareer(c), setError(null)),
+        (e: unknown) => live && setError(e instanceof Error ? e.message : "Couldn't load the career."),
+      );
+    void load();
+    const timer = setInterval(() => void load(), 5000);
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
+  }, [p.id]);
+
+  return (
+    <div className="career adm-career">
+      <button className="back" onClick={onBack}>← Players</button>
+      <div className="adm-toolbar adm-career-head">
+        <div className="adm-player-name">
+          <span className={`adm-dot ${p.online ? "on" : ""}`} title={p.online ? "Online" : "Offline"} />
+          <h2 className="adm-h adm-ellipsis" title={p.name}>{p.name}</h2>
+          <span className="tag">{career ? (career.isPublic ? "Public" : "Private") : "…"}</span>
+          {p.banned && <span className="tag danger">Banned</span>}
+          {!p.banned && p.timeout && <span className="tag danger" title={p.timeout.reason ?? undefined}>Timed out</span>}
+        </div>
+        <PlayerActions p={p} s={s} run={run} open={open} close={close} />
+      </div>
+      <p className="muted adm-career-where">{p.table ? `Playing at ${p.table.name}` : p.online ? "Online, not at a table" : "Offline"}</p>
+      {error && <p className="form-error">{error}</p>}
+      {!career ? !error && <p className="muted">Loading…</p> : <CareerDetails career={career} loadSession={(id) => api.sessionHands(p.id, id)} />}
     </div>
   );
 }

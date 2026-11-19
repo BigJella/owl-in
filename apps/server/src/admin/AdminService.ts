@@ -11,6 +11,7 @@ import {
   type AdminTimeout,
   type AdminTotals,
   type CareerView,
+  type HandRecord,
   type BotMode,
   type GameType,
   type LlmStats,
@@ -24,7 +25,7 @@ import type { PlayerRegistry } from "../players/PlayerRegistry";
 import type { BlackjackRoom } from "../rooms/BlackjackRoom";
 import type { BlackjackRoomManager } from "../rooms/BlackjackRoomManager";
 import type { PokerRoom } from "../rooms/PokerRoom";
-import { careerView } from "../stats/careerView";
+import { careerView, sessionHandsFor } from "../stats/careerView";
 import type { StatsStore } from "../stats/StatsStore";
 import { MIN_OPEN_ROOMS, type RoomManager } from "../rooms/RoomManager";
 import type { Moderation } from "./Moderation";
@@ -133,6 +134,13 @@ export class AdminService {
     const player = this.player(playerId);
     if (!this.deps.stats) throw new AdminError(404, "Career stats aren't available on this server.");
     return careerView(this.deps.stats, player, null, this.deps.rooms.chipsOf(player));
+  }
+
+  /** One table session's hands, as the Career page's history shows them (unshown poker hole cards hidden). */
+  sessionHands(playerId: string, sessionId: string): HandRecord[] {
+    const player = this.player(playerId);
+    if (!this.deps.stats) throw new AdminError(404, "Career stats aren't available on this server.");
+    return sessionHandsFor(this.deps.stats, player, null, sessionId);
   }
 
   llm(limit = 100): LlmStats {
