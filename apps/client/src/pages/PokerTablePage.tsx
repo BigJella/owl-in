@@ -109,6 +109,7 @@ function TableStrip({ received, now }: { received: ReceivedMessage; now: number 
             <>
               {acting?.name ?? "—"}
               {acting?.botMode === "llm" && <i className="tag gold strip-ai">AI</i>}
+              {acting?.botMode === "script" && <i className="tag strip-ai">BOT</i>}
               {actingClock && <b className={`strip-clock ${actingClock === "thinking" ? "muted" : ""}`}>{actingClock}</b>}
             </>
           )}

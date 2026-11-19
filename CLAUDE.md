@@ -238,7 +238,8 @@ it/owl-live/index.html        The itcan.do chat query page (live stats strip, ch
 - The AI count is kept at every gap: when a human replaces an LLM bot (closest-stack rule), an auto bot is switched to LLM.
   Pinned bots are never switched, and a pin counts toward the table's AI count (a pin to AI can push an auto bot to script).
 - **LLM bots play by script at tables with no humans** (seated or waiting), so bot-only rooms spend no tokens.
-- UI: LLM bots' seat plates carry a gold **AI** tag (script bots: grey **BOT**); the strip's "To act" cell shows a small AI tag.
+- UI: LLM bots' seat plates carry a gold **AI** tag (script bots: grey **BOT**); the strip's "To act" cell shows a small AI tag
+  (or a grey BOT tag for a script bot; the blackjack strip shows BOT for bots too).
 
 **Admin & moderation (agreed with the user, keep these)**
 - **Admin panel** at `localhost:5173/admin.html`, **this computer only**. Separate from the player site (no socket, no identity).
@@ -581,6 +582,10 @@ only arrive while that session is open.
   The remote is GitHub (`origin` → `BigJella/owl-in`); push only when the user asks, and delete merged feature branches
   (local and on `origin`) when asked. End commit messages with the Co-Authored-By line.
 - **Keep this file current.** Update the rules, checklist and next steps here whenever behaviour or design changes.
+- **Vitest and the drive letter:** if the shell's cwd starts with a lowercase `c:` every suite fails to load
+  ("failed to find the runner" / "reading 'config'"): vitest loads itself twice. `cd "C:/Users/..."` first.
+- **Bet chips avoid the board:** `PokerRenderer.betSpot()` places each seat's bet 60% toward the centre, sliding it sideways
+  or toward the plate when the chip + amount would overlap the board row, the seat's hole cards or the dealer button.
 - `npm install` warns that esbuild's install script was blocked. Harmless: Vite and tsx work.
 - **If the repo folder is moved or renamed, run `npm install`**: the workspace links in `node_modules/@owl-in` are absolute
   junctions and keep pointing at the old path (every `@owl-in/*` import then fails to resolve).

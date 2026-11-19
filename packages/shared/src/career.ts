@@ -30,10 +30,11 @@ export interface BlackjackStats {
   pushes: number;
   blackjacks: number;
   busts: number;
-  /** Times you split a pair. */
+  /** Rounds in which you split at least once (the Split rate is per round). */
   splits: number;
   doubles: number;
   surrenders: number;
+  /** Rounds in which you took insurance on at least one spot. */
   insurances: number;
   wagered: number;
   returned: number;

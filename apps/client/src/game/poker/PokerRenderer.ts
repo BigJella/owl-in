@@ -21,6 +21,15 @@ const BOARD_Y = CY + 30;
 const POT_Y_BOARD = CY - 62;
 const POT_Y_EMPTY = CY;
 const SIDE_POT_GAP = 26;
+/** The board row's footprint (5 cards) plus a small margin: bets are never placed on it. */
+const BOARD_RECT = {
+  x0: CX - 2 * (BOARD_W + 8) - BOARD_W / 2 - 6,
+  x1: CX + 2 * (BOARD_W + 8) + BOARD_W / 2 + 6,
+  y0: BOARD_Y - BOARD_H / 2 - 6,
+  y1: BOARD_Y + BOARD_H / 2 + 6,
+};
+/** Room kept for a bet's amount label (drawn right of the chip), wide enough for "$10,000". */
+const BET_LABEL_W = 54;
 const FONT = '"Oswald", "Inter", system-ui, sans-serif';
 /** KSU gold (Pantone 1235 C). */
 const GOLD = 0xffb81c;
@@ -664,6 +673,7 @@ export class PokerRenderer {
         return { x: plate.x + dx * t - (dy / len) * sideways, y: plate.y + dy * t + (dx / len) * sideways };
       };
       const cards = toward(0.3);
+      const button = toward(0.42, 48);
       // Labels go on the side of the plate away from the cards, so they never stack on them:
       //  - bottom seats (cards above the plate): action below, then status/clock under it
       //  - top seats (cards below the plate): action, status/clock and hand result stacked ABOVE the name
@@ -679,8 +689,8 @@ export class PokerRenderer {
           { x: cards.x - CARD_W * 0.36, y: cards.y },
           { x: cards.x + CARD_W * 0.36, y: cards.y },
         ],
-        bet: toward(0.6),
-        button: toward(0.42, 48),
+        bet: this.betSpot(toward, cards, button),
+        button,
       };
       node.root.position.copyFrom(plate);
 
@@ -694,6 +704,31 @@ export class PokerRenderer {
       if (above) node.hand.position.set(plate.x, plate.y - 96);
       else node.hand.position.set(cards.x, below ? cards.y - CARD_H / 2 - 13 : cards.y + CARD_H / 2 + 13);
     });
+  }
+
+  /**
+   * Where a seat's bet goes: 60% of the way to the centre, unless the chip + amount would land on the board,
+   * the seat's own hole cards or the dealer button (the lower diagonal and side seats). Then it slides
+   * sideways a little, or toward the plate, to the first clear spot.
+   */
+  private betSpot(toward: (t: number, sideways?: number) => Point, cards: Point, button: Point): Point {
+    type Rect = { x0: number; x1: number; y0: number; y1: number };
+    const hit = (a: Rect, b: Rect) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+    const cardsRect = {
+      x0: cards.x - CARD_W * 0.86 - 4,
+      x1: cards.x + CARD_W * 0.86 + 4,
+      y0: cards.y - CARD_H / 2 - 4,
+      y1: cards.y + CARD_H / 2 + 4,
+    };
+    const buttonRect = { x0: button.x - 14, x1: button.x + 14, y0: button.y - 14, y1: button.y + 14 };
+    for (let step = 0; step <= 30; step += 1) {
+      for (const sideways of [0, -20, 20, -40, 40]) {
+        const p = toward(0.6 - step * 0.01, sideways);
+        const bet = { x0: p.x - 12, x1: p.x + 16 + BET_LABEL_W, y0: p.y - 12, y1: p.y + 12 };
+        if (!hit(bet, BOARD_RECT) && !hit(bet, cardsRect) && !hit(bet, buttonRect)) return p;
+      }
+    }
+    return toward(0.6);
   }
 
   private makeSeat(): SeatNode {

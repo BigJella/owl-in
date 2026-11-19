@@ -54,6 +54,7 @@ function TableStrip({ received, now }: { received: ReceivedBlackjack; now: numbe
     status = (
       <>
         {acting.name} · spot {view.toAct.spot + 1}
+        {acting.kind === "bot" && <i className="tag strip-ai">BOT</i>}
         {clock && <b className={`strip-clock ${clock === "thinking" ? "muted" : ""}`}>{clock}</b>}
       </>
     );

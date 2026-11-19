@@ -163,6 +163,30 @@ describe("recording from rooms", () => {
   });
 });
 
+describe("blackjack rates", () => {
+  it("counts split and insurance once per round, so their rates never pass 100%", () => {
+    const stats = new MemoryStatsStore();
+    const card: PlayingCard = { rank: "8", suit: "spades" };
+    const hand = { cards: [card, card], bet: 10, doubled: false, split: true, result: "lose" as const, payout: 0 };
+    const spot = (n: number, insurance: number) => ({ spot: n, insurance, insurancePayout: 0, hands: [hand, hand, hand, hand] });
+    const round = (spots: ReturnType<typeof spot>[]) => ({
+      game: "blackjack" as const,
+      sessionId: "s",
+      roundId: 1,
+      at: 0,
+      dealer: { cards: [card, card], total: 16 },
+      spots,
+      wagered: 0,
+      returned: 0,
+      net: 0,
+    });
+    // Three spots each split to four hands, two of them insured, then a round with no split or insurance.
+    stats.recordBlackjackRound("p1", round([spot(0, 5), spot(1, 5), spot(2, 0)]));
+    stats.recordBlackjackRound("p1", round([{ ...spot(0, 0), hands: [{ ...hand, split: false }] }]));
+    expect(stats.career("p1").blackjack).toMatchObject({ rounds: 2, hands: 13, splits: 1, insurances: 1 });
+  });
+});
+
 describe("privacy and the leaderboard", () => {
   it("hides private careers and unshown hole cards from other players", () => {
     const stats = new MemoryStatsStore();

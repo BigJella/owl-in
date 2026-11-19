@@ -81,9 +81,10 @@ export class MemoryStatsStore implements StatsStore {
   recordBlackjackRound(playerId: string, record: BlackjackRoundRecord) {
     const b = this.stats(playerId).blackjack;
     b.rounds += 1;
+    // Split and insurance are rates per round: count the round once, however many spots split or insured.
+    if (record.spots.some((spot) => spot.hands.length > 1)) b.splits += 1;
+    if (record.spots.some((spot) => spot.insurance > 0)) b.insurances += 1;
     for (const spot of record.spots) {
-      b.splits += spot.hands.length - 1;
-      if (spot.insurance > 0) b.insurances += 1;
       for (const hand of spot.hands) {
         b.hands += 1;
         if (hand.result === "win") b.wins += 1;
