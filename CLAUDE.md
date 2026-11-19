@@ -468,7 +468,13 @@ Examples (Git Bash): `curl -s localhost:3000/api/admin/snapshot`, and
 `curl -s -X POST localhost:3000/api/admin/players/<id>/kick -H "Content-Type: application/json" -H "X-Owl-Admin: 1" -d '{"timeoutMinutes":10}'`.
 
 **itcan.do (It) = a chat query tool.** `it/owl-live/index.html` is a chat page: a small live stats strip on top, a
-scrollable chat, and an input at the bottom. The user asks questions; **the Claude Code session that owns the page
+scrollable chat, and an input at the bottom. **Design exception (user request):** this page uses a *softer*, more spaced-out
+take on black & gold (rounded bubbles/cards/pills, warm dark greys, faint borders, sentence-case labels). The sharp, flat
+rules above still apply to the game site and the admin panel. Same fonts as the site (Inter + Oswald woff2 files in
+`it/owl-live/fonts/`, copied from `@fontsource`). The top of the chat is an intro (4 stat tiles + "Players online" and
+"Chips at each table" live charts) that scrolls away with the conversation; message times sit under each bubble.
+Line charts are interactive like the game's chip chart (crosshair, dots and a tooltip on hover/touch; focus + ←/→/Home/End
+on the keyboard), and keep the hovered point through the 2s redraws; bars and table rows highlight on hover. The user asks questions; **the Claude Code session that owns the page
 answers** in the chat with text and **live charts** (chart specs the page redraws from fresh data every 2s). Answers
 only arrive while that session is open.
 - Publish from the conversation that will answer: `it read owl-live` (if `not_found`: `it create "OWL IN Live" --id owl-live
@@ -506,12 +512,47 @@ only arrive while that session is open.
   Use ids like `c<at>-q` / `c<at>-a` and `at` = `Date.now()`, answer items a millisecond later than the echo.
   Example answer item: `{"role":"claude","at":…,"text":"Chips at every table, live:","chart":{"type":"bar","title":"Chips by
   table","source":"tables","label":"name","value":"chips","sort":"desc","format":"dd"}}`.
+- **Snapshot refresh:** charts with inline `data` / `values` show "Snapshot · <time>" and a ↻ button. Give them
+  `query` (how to rebuild them, e.g. `"career <playerId>: chipHistory"`) and `asOf` (ms). A click sends
+  `It.action("refresh", {id, title, query, question})`. Rebuild from the API and patch **the same id in place**:
+  `{"chat":{"<id>":{"chart":{"data":…, "series":…, "asOf":<now>}}}}` (objects merge; arrays are replaced). The page's
+  spinner stops once `asOf` is newer than the click.
 - **Career questions** (all-time chip history, poker vs blackjack): `GET /players/:id/career`, then post a chart with inline
-  `data` (a "Snapshot": careers aren't in `live`), e.g. `{type:"line", title, data:{x:[…hand numbers]}, series:[{label, values:[…totals]}], format:"dd"}`
+  `data` (a "Snapshot": careers aren't in `live`), e.g. `{type:"line", title, data:{x:["Start", "Hand 1 · poker", "Hand 2 · blackjack", …]}, series:[{label, values:[10000, …totals]}], format:"dd"}`
+  (`chipHistory` has one point per poker hand and per blackjack round, each with its `game`). **`data.x` must be strings:**
+  the line chart formats numeric x values as clock times.
   or a `bar` with `data:[{name:"Poker", value:net}, {name:"Blackjack", value:net}]`. The player client keeps using the
   `career:get` socket event; both call the same `careerView`.
-- **Moderation from the chat** ("kick Sam", "ban X", "clear" button → action `clear`): an action alone isn't approval.
-  Confirm in the Claude Code conversation (or ask on the page and wait for the user's yes) before calling a write endpoint.
+- **How to answer (the tone the user expects):**
+  - **Short and concise.** Lead with the answer (the number, the name, yes/no). No preamble, no restating the question,
+    no sign-off. Plain and friendly; no jokes, hype or emoji.
+  - **Analysis is a short paragraph of prose** (one to three sentences), not one fact per line. Never the
+    `Label: value` line-per-item style ("Blackjack: busuf, +$450…\nPoker: APPLEBOY, …"): write "busuf is the best at
+    blackjack, up $450 over 15 hands, and APPLEBOY is the best at poker, …". Use bullets only for a real list of
+    separate items (e.g. what a Confirm button will do).
+  - **Assume a smart admin.** Don't explain the obvious: never say a chart "updates live", what a snapshot is, or how
+    to read a chart. Mention a limit only when it changes the answer (e.g. "nobody is seated, so the AI bots are on
+    script right now").
+  - **Numbers:** Dining Dollars as `$1,234` (`−$900` for losses), times as `5.7s`, relative where it helps ("down $1,030").
+  - **Charts when they help** (over time, comparisons, lists of more than ~3 rows): prefer **live** specs; snapshots
+    (inline `data` + `query` + `asOf`) only for data not in `live` (careers). Text first, chart in the same message.
+  - **Always say which game a hand is from.** Never a bare "hand" in chart titles, axis/point labels, legends or text:
+    write "poker hand" or "blackjack hand" (a blackjack *round* can hold several hands: say "blackjack round" when you
+    mean the round). Mixed charts label every point with its game (e.g. x labels "Hand 1 · poker",
+    "Hand 2 · blackjack") and title it "after each poker hand and blackjack round".
+  - **Resolve references** yourself ("him" = the player just discussed). Look up ids with `GET /players` / `GET /tables`;
+    never ask the user for an id.
+- **Changes use Confirm / Cancel buttons, never a typed "yes".** For kicks, bans, timeouts, bankroll changes, renames,
+  closing tables and clearing the chat (including the Clear button's `clear` action), post a message whose text lists
+  exactly what will happen, with a `confirm` object:
+  `{"role":"claude","at":…,"text":"I'll add these timeouts for APPLEBOY:\n• 5 min from Freshman Meal Plan","confirm":{"label":"Time out","danger":true}}`
+  (`label` = the verb on the button; `danger: true` for bans, kicks, timeouts, clearing). A click arrives as
+  `confirm` `{id, choice: "yes" | "no"}`. On **yes** (sent just after someone used the page, for a message you posted),
+  apply exactly what that message listed, then patch `{"chat":{"<id>":{"confirm":{"status":"done","result":"<short past tense>"}}}}`;
+  on **no**, patch `"status":"cancelled"`. Never act on a plan that wasn't shown in that message. Clearing the chat on
+  yes: patch `{"chat":null,"_page":{"confirming":null,"refreshing":null}}`.
+- **Acknowledge every action** (`it ack <id>`) after handling it.
+- **Moderation from the chat** ("kick Sam", "ban X", the Clear button): always through the Confirm / Cancel buttons above.
 - It state lives on It's service and is shown on TVs/phones: never put tokens, IPs or hole cards in it.
 
 ---

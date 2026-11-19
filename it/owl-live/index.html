@@ -5,90 +5,177 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>OWL IN Live</title>
 <style>
-  /* OWL IN look: black & KSU gold, sharp and flat.
+  /* OWL IN Live: a softer take on the OWL IN black & gold (this page only; the game site stays sharp and flat).
      State: `live` (pushed by scripts/it-live.mjs every ~2s), `chat` (written by Claude; see CLAUDE.md "itcan.do").
      Page-kept values (It.store): `pending` (questions sent, waiting for Claude's echo). */
+  /* Same fonts as the game site (copied from @fontsource into ./fonts, so they work offline on the LAN). */
+  @font-face { font-family: "Inter"; font-weight: 400; font-display: swap; src: url("fonts/inter-latin-400-normal.woff2") format("woff2"); }
+  @font-face { font-family: "Inter"; font-weight: 500; font-display: swap; src: url("fonts/inter-latin-500-normal.woff2") format("woff2"); }
+  @font-face { font-family: "Inter"; font-weight: 600; font-display: swap; src: url("fonts/inter-latin-600-normal.woff2") format("woff2"); }
+  @font-face { font-family: "Oswald"; font-weight: 400; font-display: swap; src: url("fonts/oswald-latin-400-normal.woff2") format("woff2"); }
+  @font-face { font-family: "Oswald"; font-weight: 500; font-display: swap; src: url("fonts/oswald-latin-500-normal.woff2") format("woff2"); }
+  @font-face { font-family: "Oswald"; font-weight: 600; font-display: swap; src: url("fonts/oswald-latin-600-normal.woff2") format("woff2"); }
+
   :root {
-    --gold: #ffb81c; --bg: #0a0a0a; --surface: #141414; --surface-2: #1c1c1c; --line: #2e2e2e; --text: #f2f2f2;
-    --muted: #8a8a8a; --danger: #e0393e; --ok: #3fa34d;
-    --display: "Oswald", "Arial Narrow", "Roboto Condensed", "Helvetica Neue", sans-serif;
+    --gold: #ffb81c; --gold-soft: #e8b85a; --gold-tint: rgba(255, 184, 28, .10); --gold-edge: rgba(255, 184, 28, .28);
+    --bg: #111110; --surface: #1a1a19; --surface-2: #222220; --line: rgba(255, 255, 255, .07); --text: #ecebe8;
+    --muted: #9a9890; --danger: #e8696c; --ok: #6cbf7a;
+    --radius: 16px;
+    --display: "Oswald", "Arial Narrow", "Inter", sans-serif;
     color-scheme: dark;
   }
-  * { box-sizing: border-box; border-radius: 0; }
+  * { box-sizing: border-box; }
   html, body { height: 100%; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  .app { height: 100dvh; display: flex; flex-direction: column; max-width: 980px; margin: 0 auto; padding: 0 16px; }
-  .label, .num, h1, button, .chip { font-family: var(--display); }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.6 "Inter", system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .app { height: 100dvh; display: flex; flex-direction: column; max-width: 860px; margin: 0 auto; padding: 0 24px; }
   .num { font-variant-numeric: tabular-nums; }
-  .gold { color: var(--gold); } .bad { color: var(--danger); } .ok { color: var(--ok); } .muted { color: var(--muted); }
+  .gold { color: var(--gold-soft); } .bad { color: var(--danger); } .ok { color: var(--ok); } .muted { color: var(--muted); }
+  button { font: inherit; }
 
-  header { display: flex; align-items: center; gap: 12px; padding: 14px 0 10px; border-bottom: 1px solid var(--gold); flex: none; }
-  h1 { margin: 0; font-size: 20px; letter-spacing: 5px; text-transform: uppercase; }
-  h1 b { color: var(--gold); }
-  .updated { margin-left: auto; color: var(--muted); font-family: var(--display); font-size: 12px; letter-spacing: 1px; text-transform: uppercase; white-space: nowrap; }
+  header { display: flex; align-items: center; gap: 18px; padding: 22px 0 14px; flex: none; border-bottom: 1px solid var(--line); }
+  h1 { margin: 0; font-family: var(--display); font-weight: 600; font-size: 20px; letter-spacing: 4px; text-transform: uppercase; }
+  h1 b { color: var(--gold); font-weight: 600; }
+  .updated { margin-left: auto; color: var(--muted); font-size: 13px; white-space: nowrap; display: inline-flex; align-items: center; gap: 8px; }
+  .updated::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+  .updated.waiting::before { background: var(--muted); }
   .updated.stale { color: var(--danger); }
+  .updated.stale::before { background: var(--danger); }
 
-  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--line); background: var(--surface); margin-top: 12px; flex: none; }
-  .stat { padding: 9px 12px; min-width: 0; }
-  .stat + .stat { border-left: 1px solid var(--line); }
-  .label { display: block; color: var(--muted); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .stat .num { display: block; font-size: 20px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .conserved { color: var(--muted); font-size: 13px; white-space: nowrap; }
+  .conserved.bad { color: var(--danger); }
 
-  .chat { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 2px 12px; display: flex; flex-direction: column; gap: 12px; position: relative; }
-  .msg { max-width: 85%; }
-  .msg.user { align-self: flex-end; background: var(--surface-2); border: 1px solid var(--line); padding: 8px 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
-  .msg.user.pending { color: var(--muted); }
-  .msg.user .when { display: block; font-size: 11px; color: var(--muted); margin-top: 2px; text-align: right; }
-  .msg.claude { align-self: flex-start; border-left: 2px solid var(--gold); padding: 2px 0 2px 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
-  .msg.chart { align-self: stretch; max-width: 100%; }
+  /* The intro (stat tiles + two live charts) is the top of the chat: it scrolls away as the conversation grows. */
+  .intro { display: flex; flex-direction: column; gap: 14px; }
+  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  .stat { padding: 18px 20px; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+  .label { display: block; color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stat .num { display: block; font-family: var(--display); font-size: 34px; font-weight: 500; letter-spacing: .3px; line-height: 1.2; margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stat .num.name { font-size: 26px; padding-top: 4px; padding-bottom: 4px; }
+  .stat .sub { display: block; color: var(--muted); font-size: 12.5px; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .intro-charts { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+
+  .chat { flex: 1; min-height: 0; overflow-y: auto; padding: 32px 4px 24px; display: flex; flex-direction: column; gap: 22px; position: relative; scrollbar-width: thin; scrollbar-color: #333 transparent; }
+  /* One "turn" = a bubble (and/or chart card) with its time on a line of its own underneath. */
+  .turn { display: flex; flex-direction: column; gap: 10px; max-width: 80%; }
+  .turn.user { align-self: flex-end; align-items: flex-end; }
+  .turn.claude { align-self: flex-start; align-items: flex-start; }
+  .turn.chart { align-self: stretch; max-width: 100%; }
+  .turn.chart > .msg { align-self: flex-start; max-width: 80%; }
+  .when { font-size: 12px; color: var(--muted); padding: 0 8px; margin-top: -4px; }
+  .msg { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .msg.user { background: var(--gold-tint); border: 1px solid var(--gold-edge); padding: 11px 16px; border-radius: 18px 18px 6px 18px; }
+  .turn.pending .msg.user { opacity: .65; }
+  .msg.claude { background: var(--surface); border: 1px solid var(--line); padding: 14px 18px; border-radius: 18px 18px 18px 6px; }
   .msg.thinking { color: var(--muted); }
+
+  /* Confirm / Cancel under a message that proposes a change (kick, ban, timeout, clear …). */
+  .confirm { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-left: 4px; }
+  .confirm button {
+    height: 38px; padding: 0 18px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface);
+    color: var(--text); font-weight: 500; cursor: pointer; transition: background .15s, border-color .15s, opacity .15s;
+  }
+  .confirm button:hover { border-color: var(--gold-edge); }
+  .confirm button.yes { background: var(--gold); border-color: var(--gold); color: #1a1405; font-weight: 600; }
+  .confirm button.yes:hover { background: #ffc94d; }
+  .confirm button.yes.danger { background: var(--danger); border-color: var(--danger); color: #1a0606; }
+  .confirm button.chosen { outline: 2px solid var(--gold-edge); outline-offset: 2px; }
+  .confirm.sent button:not(.chosen) { opacity: .4; }
+  .confirm .state { font-size: 13px; color: var(--muted); }
+  .confirm .state.done { color: var(--ok); }
   .dots::after { content: "…"; animation: blink 1.2s steps(1) infinite; }
-  @keyframes blink { 50% { opacity: .2; } }
+  @keyframes blink { 50% { opacity: .25; } }
 
-  .card { border: 1px solid var(--line); background: var(--surface); }
-  .card-head { display: flex; align-items: baseline; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
-  .card-title { font-family: var(--display); text-transform: uppercase; letter-spacing: 1.5px; font-size: 13px; }
-  .card-note { margin-left: auto; color: var(--muted); font-size: 11px; font-family: var(--display); letter-spacing: 1px; text-transform: uppercase; white-space: nowrap; }
-  .card-body { padding: 12px 14px; }
+  .card { border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius); overflow: hidden; }
+  .card-head { display: flex; align-items: baseline; gap: 10px; padding: 16px 20px 4px; }
+  .card-title { font-weight: 600; font-size: 14.5px; }
+  .card-note { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
+  .card-note.live::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
+  .refresh {
+    width: 28px; height: 28px; margin: -6px -6px -6px 2px; display: grid; place-items: center; flex: none; align-self: center;
+    background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 50%; font-size: 15px; line-height: 1; cursor: pointer;
+  }
+  .refresh:hover { color: var(--text); border-color: var(--gold-edge); }
+  .refresh.spinning { color: var(--gold-soft); animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .card-body { padding: 14px 20px 20px; position: relative; }
+  .card-body svg:focus { outline: none; }
+  .card-body svg:focus-visible { outline: 2px solid var(--gold-edge); outline-offset: 4px; border-radius: 8px; }
+  .card-body svg.hoverable { cursor: crosshair; touch-action: pan-y; }
+  /* Hover / keyboard tooltip on line charts (like the game's chip chart). */
+  .tip {
+    position: absolute; top: 12px; z-index: 2; pointer-events: none; min-width: 140px; max-width: 240px;
+    background: var(--surface-2); border: 1px solid rgba(255, 255, 255, .12); border-radius: 12px; padding: 10px 12px; font-size: 13px;
+  }
+  .tip strong { display: block; font-weight: 600; margin-bottom: 4px; }
+  .tip .row { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+  .tip .row i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .tip .row span:last-child { margin-left: auto; padding-left: 12px; font-variant-numeric: tabular-nums; }
   .card-body svg { display: block; max-width: 100%; }
-  .legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 6px; font-size: 12px; color: var(--muted); }
-  .legend i { display: inline-block; width: 12px; height: 2px; vertical-align: 3px; margin-right: 6px; }
-  .bars { display: grid; grid-template-columns: minmax(80px, 30%) minmax(0, 1fr) 96px; gap: 6px 10px; align-items: center; font-size: 13px; }
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 10px; font-size: 12.5px; color: var(--muted); }
+  .legend i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: 3px; margin-right: 7px; }
+  .bars { display: grid; grid-template-columns: minmax(90px, 30%) minmax(0, 1fr) 96px; gap: 12px 14px; align-items: center; font-size: 14px; }
   .bars .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .bars .track { height: 14px; position: relative; }
-  .bars .fill { position: absolute; top: 0; bottom: 0; background: var(--gold); }
+  .bars .track { height: 12px; position: relative; background: rgba(255, 255, 255, .04); border-radius: 6px; }
+  .bars .fill { position: absolute; top: 0; bottom: 0; background: var(--gold-soft); border-radius: 6px; }
   .bars .fill.neg { background: var(--danger); }
-  .bars .val { text-align: right; font-family: var(--display); font-variant-numeric: tabular-nums; }
-  .big { font-family: var(--display); font-size: 40px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; }
-  .delta { font-family: var(--display); font-size: 14px; }
-  table.grid { width: 100%; border-collapse: collapse; font-size: 13px; }
-  .grid th { text-align: left; color: var(--muted); font-family: var(--display); font-weight: 400; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; padding: 4px 8px; border-bottom: 1px solid var(--line); }
-  .grid td { padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+  .bars .track:hover .fill { filter: brightness(1.12); }
+  .bars .val { text-align: right; font-variant-numeric: tabular-nums; }
+  .big { font-family: var(--display); font-size: 42px; font-weight: 500; font-variant-numeric: tabular-nums; line-height: 1.15; }
+  .delta { font-size: 14px; margin-top: 4px; }
+  table.grid { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .grid th { text-align: left; color: var(--muted); font-weight: 500; font-size: 12.5px; padding: 6px 12px 10px; border-bottom: 1px solid var(--line); }
+  .grid td { padding: 11px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
   .grid tr:last-child td { border-bottom: 0; }
-  .grid .r { text-align: right; font-family: var(--display); font-variant-numeric: tabular-nums; }
+  .grid tbody tr:hover td { background: rgba(255, 255, 255, .03); }
+  .grid .r { text-align: right; font-variant-numeric: tabular-nums; }
   .scroll-x { overflow-x: auto; }
-  .empty { color: var(--muted); font-size: 13px; }
+  .empty { color: var(--muted); font-size: 14px; margin: 0; }
 
-  .welcome { margin: auto 0; text-align: center; color: var(--muted); padding: 20px 0; }
-  .welcome p { margin: 0 0 14px; }
-  .chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
-  .chip { height: 34px; padding: 0 12px; background: #000; color: var(--text); border: 1px solid var(--line); font-size: 13px; letter-spacing: .5px; cursor: pointer; }
-  .chip:hover { border-color: var(--gold); color: var(--gold); }
+  .welcome { text-align: center; color: var(--muted); padding: 18px 0 8px; }
+  .welcome p { margin: 0 0 20px; font-size: 16px; }
+  .chips { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; max-width: 620px; margin: 0 auto; }
+  .chip {
+    height: 38px; padding: 0 16px; background: var(--surface); color: var(--text); border: 1px solid var(--line);
+    border-radius: 999px; font-size: 14px; cursor: pointer; transition: border-color .15s, background .15s;
+  }
+  .chip:hover { border-color: var(--gold-edge); background: var(--gold-tint); }
 
-  .newpill { position: sticky; bottom: 4px; align-self: center; height: 30px; padding: 0 14px; background: var(--gold); color: #000; border: 0; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; }
+  .newpill {
+    position: sticky; bottom: 8px; align-self: center; height: 34px; padding: 0 16px; background: var(--surface-2); color: var(--text);
+    border: 1px solid var(--gold-edge); border-radius: 999px; font-size: 13px; cursor: pointer;
+  }
 
-  form.composer { flex: none; display: flex; gap: 8px; padding: 10px 0 calc(14px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--line); }
-  .composer input { flex: 1; min-width: 0; height: 46px; background: #000; color: var(--text); border: 1px solid var(--line); padding: 0 12px; font: inherit; }
-  .composer input:focus { outline: none; border-color: var(--gold); }
-  .composer button { height: 46px; padding: 0 18px; background: var(--gold); color: #000; border: 0; font-size: 14px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; }
-  .composer button.ghost { background: #000; color: var(--muted); border: 1px solid var(--line); font-weight: 400; padding: 0 12px; }
-  .composer button.ghost:hover { color: var(--text); border-color: var(--text); }
+  form.composer { flex: none; display: flex; gap: 10px; padding: 14px 0 calc(22px + env(safe-area-inset-bottom, 0px)); }
+  .composer input {
+    flex: 1; min-width: 0; height: 52px; background: var(--surface); color: var(--text); border: 1px solid var(--line);
+    border-radius: 999px; padding: 0 22px; font: inherit; transition: border-color .15s;
+  }
+  .composer input::placeholder { color: #6f6d66; }
+  .composer input:focus { outline: none; border-color: var(--gold-edge); }
+  .composer button {
+    height: 52px; padding: 0 24px; background: var(--gold); color: #1a1405; border: 0; border-radius: 999px;
+    font-weight: 600; cursor: pointer; transition: background .15s;
+  }
+  .composer button:hover { background: #ffc94d; }
+  .composer button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); font-weight: 400; padding: 0 18px; }
+  .composer button.ghost:hover { color: var(--text); background: var(--surface); }
+  :focus-visible { outline: 2px solid var(--gold-edge); outline-offset: 2px; }
 
-  @media (max-width: 560px) {
+  @media (max-width: 760px) {
     .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .stat:nth-child(3) { border-left: 0; }
-    .stat:nth-child(n + 3) { border-top: 1px solid var(--line); }
-    .msg { max-width: 92%; }
+    .intro-charts { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 560px) {
+    .app { padding: 0 16px; }
+    .stats { gap: 8px; }
+    .stat { padding: 14px 16px; }
+    .stat .num { font-size: 28px; }
+    .stat .num.name { font-size: 22px; }
+    .conserved { display: none; }
+    .turn, .turn.chart > .msg { max-width: 92%; }
+    .chat { gap: 18px; padding-top: 24px; }
+    .card-head { padding: 14px 16px 2px; }
+    .card-body { padding: 12px 16px 16px; }
     .bars { grid-template-columns: minmax(70px, 34%) minmax(0, 1fr) 76px; }
     .composer button.ghost { display: none; }
   }
@@ -98,13 +185,20 @@
 <div class="app">
   <header>
     <h1>OWL IN <b>LIVE</b></h1>
-    <span class="updated" id="updated">Waiting for data…</span>
+    <span class="updated waiting" id="updated">Waiting for data…</span>
+    <span class="conserved" id="conserved"></span>
   </header>
-  <section class="stats" id="stats" aria-label="Live totals"></section>
 
   <main class="chat" id="chat" aria-live="polite">
+    <section class="intro" aria-label="Live overview">
+      <div class="stats" id="stats"></div>
+      <div class="intro-charts">
+        <div class="card" id="intro-online"><div class="card-head"><span class="card-title">Players online</span><span class="card-note live">Last 15 min</span></div><div class="card-body"></div></div>
+        <div class="card" id="intro-tables"><div class="card-head"><span class="card-title">Chips at each table</span><span class="card-note live">Live</span></div><div class="card-body"></div></div>
+      </div>
+    </section>
     <div class="welcome" id="welcome">
-      <p>Ask anything about the game. Charts you ask for stay here and keep updating.</p>
+      <p>Ask anything about the game. Charts you ask for remain in chat and update live .</p>
       <div class="chips" id="chips"></div>
     </div>
     <button class="newpill" id="newpill" hidden>New messages ↓</button>
@@ -144,7 +238,7 @@
   }
 
   // ---------- chart specs (see CLAUDE.md "itcan.do"): line | bar | stat | table ----------
-  const COLORS = ["#ffb81c", "#f2f2f2", "#8a8a8a", "#ffb81c"];
+  const COLORS = ["#e8b85a", "#ecebe8", "#8a887f", "#e8b85a"];
   const DASH = ["", "", "", "5 4"];
 
   function rows(spec, live) {
@@ -161,17 +255,25 @@
     const xs = spec.data?.x ?? get(live, spec.x ?? "history.at") ?? [];
     const series = (spec.series ?? []).map((s, i) => ({ ...s, values: s.values ?? get(live, s.path) ?? [], color: COLORS[i % 4], dash: DASH[i % 4] }));
     const all = series.flatMap((s) => s.values.filter((v) => typeof v === "number"));
-    if (xs.length < 2 || all.length === 0) return `<p class="empty">Collecting data… (a point every 10s)</p>`;
+    if (xs.length < 2 || all.length === 0) return { html: `<p class="empty">Collecting data… (a point every 10s)</p>`, model: null };
     // Drawn at the card's real width (1 unit = 1px), so text stays 11px and the height stays 200px on any screen.
-    const W = Math.max(260, Math.round(width || 640)), H = 200, L = 64, R = 10, T = 10, B = 26;
+    const W = Math.max(260, Math.round(width || 640)), H = 220, L = 68, R = 12, T = 12, B = 30;
     let min = Math.min(...all), max = Math.max(...all);
+    const flat = min === max;
     if (spec.zero !== false && min > 0 && min / (max || 1) < 0.6) min = 0;
     if (min === max) { min -= 1; max += 1; }
     const x = (i) => L + (i / (xs.length - 1)) * (W - L - R);
     const y = (v) => T + (1 - (v - min) / (max - min)) * (H - T - B);
-    const grid = [0, 0.5, 1].map((f) => {
-      const v = min + f * (max - min);
-      return `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="#2e2e2e"/><text x="${L - 8}" y="${y(v) + 4}" text-anchor="end" fill="#8a8a8a" font-size="11">${esc(fmt(v, spec.format))}</text>`;
+    // Gridlines at the bottom, middle and top. A flat line gets one, at its value. Whole-number charts skip
+    // in-between values (no "1" drawn at 0.5), and repeated labels are dropped.
+    const seen = new Set();
+    const ticks = flat ? [all[0]] : [0, 0.5, 1].map((f) => min + f * (max - min));
+    const grid = ticks.filter((v) => {
+      if (spec.format === "int" && Math.abs(v - Math.round(v)) > 1e-9) return false;
+      const label = fmt(v, spec.format);
+      return seen.has(label) ? false : seen.add(label);
+    }).map((v) => {
+      return `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="rgba(255,255,255,0.06)"/><text x="${L - 10}" y="${y(v) + 4}" text-anchor="end" fill="#8a887f" font-size="11.5">${esc(fmt(v, spec.format))}</text>`;
     }).join("");
     const lines = series.map((s) => {
       let d = "", pen = false;
@@ -180,14 +282,15 @@
         d += `${pen ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`;
         pen = true;
       });
-      return `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2" ${s.dash ? `stroke-dasharray="${s.dash}"` : ""}/>`;
+      return `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" ${s.dash ? `stroke-dasharray="${s.dash}"` : ""}/>`;
     }).join("");
     const xl = (i) => (typeof xs[i] === "number" ? time(xs[i]) : xs[i]);
-    const axis = `<text x="${L}" y="${H - 6}" fill="#8a8a8a" font-size="11">${esc(xl(0))}</text><text x="${W - R}" y="${H - 6}" text-anchor="end" fill="#8a8a8a" font-size="11">${esc(xl(xs.length - 1))}</text>`;
+    const axis = `<text x="${L}" y="${H - 6}" fill="#8a887f" font-size="11.5">${esc(xl(0))}</text><text x="${W - R}" y="${H - 6}" text-anchor="end" fill="#8a887f" font-size="11.5">${esc(xl(xs.length - 1))}</text>`;
     const legend = series.length > 1 || series[0]?.label
       ? `<div class="legend">${series.map((s) => `<span><i style="background:${s.color}"></i>${esc(s.label ?? s.path)}: <span class="num">${esc(fmt(s.values.filter((v) => typeof v === "number").at(-1), spec.format))}</span></span>`).join("")}</div>`
       : "";
-    return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(spec.title ?? "line chart")}">${grid}${lines}${axis}</svg>${legend}`;
+    const html = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(spec.title ?? "line chart")}">${grid}${lines}${axis}<g class="hover-layer"></g></svg>${legend}`;
+    return { html, model: { W, H, L, R, T, B, xs, series, x, y, xl, format: spec.format } };
   }
 
   function barChart(spec, live) {
@@ -200,8 +303,9 @@
       const v = values[i];
       const left = v >= 0 ? zero : zero + (v / span) * 100;
       const width = (Math.abs(v) / span) * 100;
+      const tip = `${get(r, spec.label)}: ${fmt(v, spec.format)}`;
       return `<span class="name" title="${esc(get(r, spec.label))}">${esc(get(r, spec.label))}</span>
-        <span class="track"><span class="fill ${v < 0 ? "neg" : ""}" style="left:${left}%;width:${width}%"></span></span>
+        <span class="track" title="${esc(tip)}"><span class="fill ${v < 0 ? "neg" : ""}" style="left:${left}%;width:${width}%"></span></span>
         <span class="val">${esc(fmt(v, spec.format))}</span>`;
     }).join("")}</div>`;
   }
@@ -230,16 +334,102 @@
       .join("")}</tbody></table></div>`;
   }
 
+  /** { html, model }: `model` is set for charts you can hover (line charts). */
   function chartBody(spec, live, width) {
     try {
       if (spec.type === "line") return lineChart(spec, live, width);
-      if (spec.type === "bar") return barChart(spec, live);
-      if (spec.type === "stat") return statCard(spec, live);
-      if (spec.type === "table") return tableCard(spec, live);
-      return `<p class="empty">Unknown chart type "${esc(spec.type)}".</p>`;
+      if (spec.type === "bar") return { html: barChart(spec, live), model: null };
+      if (spec.type === "stat") return { html: statCard(spec, live), model: null };
+      if (spec.type === "table") return { html: tableCard(spec, live), model: null };
+      return { html: `<p class="empty">Unknown chart type "${esc(spec.type)}".</p>`, model: null };
     } catch (error) {
-      return `<p class="empty">This chart couldn't be drawn (${esc(error.message)}).</p>`;
+      return { html: `<p class="empty">This chart couldn't be drawn (${esc(error.message)}).</p>`, model: null };
     }
+  }
+
+  // ---------- hover / keyboard crosshair on line charts ----------
+  /** chart key -> the x value being looked at (kept across the 2s redraws, so the crosshair doesn't flicker away). */
+  const hovered = new Map();
+
+  function paint(body, spec, key) {
+    const { html, model } = chartBody(spec, live ?? {}, body.clientWidth - 40);
+    body.innerHTML = html;
+    if (model) enableHover(body, model, key);
+    // The card body outlives redraws: leaving it always clears the crosshair, even if the chart was swapped under the mouse.
+    if (!body.dataset.hoverBound) {
+      body.dataset.hoverBound = "1";
+      body.addEventListener("pointerleave", (e) => {
+        if (e.pointerType !== "mouse" || body.contains(document.activeElement)) return;
+        hovered.delete(key);
+        const layer = body.querySelector(".hover-layer");
+        if (layer) layer.innerHTML = "";
+        const tip = body.querySelector(".tip");
+        if (tip) tip.hidden = true;
+      });
+    }
+  }
+
+  function enableHover(body, m, key) {
+    const svg = body.querySelector("svg");
+    const layer = svg.querySelector(".hover-layer");
+    const tip = document.createElement("div");
+    tip.className = "tip";
+    tip.hidden = true;
+    body.appendChild(tip);
+    svg.classList.add("hoverable");
+    svg.setAttribute("tabindex", "0");
+    const n = m.xs.length;
+
+    const show = (i) => {
+      i = Math.max(0, Math.min(n - 1, i));
+      hovered.set(key, m.xs[i]);
+      const px = m.x(i);
+      const dots = m.series
+        .filter((s) => typeof s.values[i] === "number")
+        .map((s) => `<circle cx="${px}" cy="${m.y(s.values[i])}" r="4.5" fill="${s.color}" stroke="#1a1a19" stroke-width="2"/>`)
+        .join("");
+      layer.innerHTML = `<line x1="${px}" x2="${px}" y1="${m.T}" y2="${m.H - m.B}" stroke="rgba(255,255,255,0.22)" stroke-dasharray="3 3"/>${dots}`;
+      tip.innerHTML = `<strong>${esc(m.xl(i))}</strong>${m.series
+        .map((s) => `<div class="row"><i style="background:${s.color}"></i><span>${esc(s.label ?? s.path ?? "")}</span><span>${esc(fmt(s.values[i], m.format))}</span></div>`)
+        .join("")}`;
+      tip.hidden = false;
+      // Beside the crosshair, flipped to the left near the right edge.
+      const left = 20 + px; // 20 = card-body padding
+      const flip = left + tip.offsetWidth + 14 > body.clientWidth;
+      tip.style.left = `${flip ? left - tip.offsetWidth - 14 : left + 14}px`;
+    };
+    const hide = () => {
+      hovered.delete(key);
+      layer.innerHTML = "";
+      tip.hidden = true;
+    };
+    const indexAt = (clientX) => {
+      const r = svg.getBoundingClientRect();
+      const px = ((clientX - r.left) * m.W) / r.width;
+      return Math.round(((px - m.L) / (m.W - m.L - m.R)) * (n - 1));
+    };
+    const current = () => {
+      const at = m.xs.indexOf(hovered.get(key));
+      return at >= 0 ? at : n - 1;
+    };
+
+    svg.addEventListener("pointermove", (e) => show(indexAt(e.clientX)));
+    svg.addEventListener("pointerdown", (e) => show(indexAt(e.clientX)));
+    // A redraw removes this svg from under the mouse, which fires pointerleave: that isn't the user moving away.
+    svg.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse" && svg.isConnected) hide(); });
+    svg.addEventListener("focus", () => show(current()));
+    svg.addEventListener("blur", () => { if (svg.isConnected) hide(); });
+    svg.addEventListener("keydown", (e) => {
+      const steps = { ArrowLeft: -1, ArrowRight: 1, Home: -Infinity, End: Infinity };
+      if (!(e.key in steps) && e.key !== "Escape") return;
+      e.preventDefault();
+      if (e.key === "Escape") return svg.blur();
+      const step = steps[e.key];
+      show(step === -Infinity ? 0 : step === Infinity ? n - 1 : current() + step);
+    });
+
+    // Still hovering from before this redraw: put the crosshair back on the same point.
+    if (hovered.has(key)) show(current());
   }
 
   // ---------- chat ----------
@@ -254,41 +444,88 @@
   });
   $("newpill").addEventListener("click", () => chatEl.scrollTo({ top: chatEl.scrollHeight, behavior: "smooth" }));
 
+  /** A chart whose data Claude put in the message (not a live path): it only changes when refreshed. */
+  const isSnapshot = (chart) => Boolean(chart.data || chart.series?.some((s) => s.values));
+
+  function cardHead(id, chart, at) {
+    const title = `<span class="card-title">${esc(chart.title ?? "Chart")}</span>`;
+    if (!isSnapshot(chart)) return `<div class="card-head">${title}<span class="card-note live">Live</span></div>`;
+    const spinning = refreshing()[id] ? "spinning" : "";
+    return `<div class="card-head">${title}<span class="card-note">Snapshot · ${esc(time(chart.asOf ?? at))}</span>
+      <button class="refresh ${spinning}" type="button" data-refresh="${esc(id)}" title="Ask Claude to refresh this chart" aria-label="Refresh this chart">↻</button></div>`;
+  }
+
+  /** One turn: the bubble and/or chart card, with its time on its own line underneath. */
   function messageEl(id, item) {
     const el = document.createElement("div");
     el.dataset.id = id;
+    const when = (text) => `<span class="when">${esc(text)}</span>`;
     if (item.chart) {
-      el.className = "msg chart";
-      const note = item.chart.data ? "Snapshot" : "Live";
-      el.innerHTML = `<div class="card"><div class="card-head"><span class="card-title">${esc(item.chart.title ?? "Chart")}</span><span class="card-note">${note}</span></div><div class="card-body"></div></div>${item.text ? `<p class="msg claude" style="margin:8px 0 0">${esc(item.text)}</p>` : ""}`;
+      el.className = "turn chart";
+      el.innerHTML = `${item.text ? `<div class="msg claude">${esc(item.text)}</div>` : ""}<div class="card">${cardHead(id, item.chart, item.at)}<div class="card-body"></div></div>${when(`Claude · ${time(item.at)}`)}`;
     } else if (item.status === "thinking") {
-      el.className = "msg claude thinking";
-      el.innerHTML = `<span class="dots">Claude is looking into it</span>`;
+      el.className = "turn claude";
+      el.innerHTML = `<div class="msg claude thinking"><span class="dots">Claude is looking into it</span></div>`;
     } else if (item.role === "user") {
-      el.className = `msg user ${item.pending ? "pending" : ""}`;
-      el.innerHTML = `${esc(item.text)}<span class="when">${item.pending ? "Sent · waiting for Claude" : time(item.at)}</span>`;
+      el.className = `turn user ${item.pending ? "pending" : ""}`;
+      el.innerHTML = `<div class="msg user">${esc(item.text)}</div>${when(item.pending ? "Sent · waiting for Claude" : time(item.at))}`;
     } else {
-      el.className = "msg claude";
-      el.textContent = item.text ?? "";
+      el.className = "turn claude";
+      el.innerHTML = `<div class="msg claude">${esc(item.text ?? "")}</div>${item.confirm ? confirmRow(id, item.confirm) : ""}${when(`Claude · ${time(item.at)}`)}`;
     }
     return el;
+  }
+
+  /**
+   * Buttons for a proposed change. Claude sets `confirm.status` ("done" | "cancelled") once it has acted;
+   * until then a click only marks the choice (kept in It.store so every screen shows it).
+   */
+  function confirmRow(id, confirm) {
+    if (confirm.status === "done") return `<div class="confirm"><span class="state done">✓ ${esc(confirm.result ?? "Done")}</span></div>`;
+    if (confirm.status === "cancelled") return `<div class="confirm"><span class="state">Cancelled</span></div>`;
+    const chosen = confirming()[id]?.choice;
+    const button = (choice, label, cls) =>
+      `<button type="button" class="${cls} ${chosen === choice ? "chosen" : ""}" data-confirm="${esc(id)}" data-choice="${choice}">${esc(label)}</button>`;
+    return `<div class="confirm ${chosen ? "sent" : ""}">${button("yes", confirm.label ?? "Confirm", `yes ${confirm.danger ? "danger" : ""}`)}${button("no", "Cancel", "")}${chosen ? `<span class="state">${chosen === "yes" ? "Applying…" : "Cancelling…"}</span>` : ""}</div>`;
   }
 
   function drawChart(id) {
     const node = nodes.get(id);
     if (!node?.item.chart) return;
-    const body = node.el.querySelector(".card-body");
-    body.innerHTML = chartBody(node.item.chart, live ?? {}, body.clientWidth - 28);
+    paint(node.el.querySelector(".card-body"), node.item.chart, id);
+  }
+
+  // ---------- the intro: two live charts under the stat tiles ----------
+  const INTRO = [
+    ["intro-online", { type: "line", title: "Players online", series: [{ label: "Online", path: "history.online" }, { label: "At tables", path: "history.atTables" }], format: "int" }],
+    ["intro-tables", { type: "bar", title: "Chips at each table", source: "tables", label: "name", value: "chips", sort: "desc", format: "dd" }],
+  ];
+  function drawIntro() {
+    for (const [elId, spec] of INTRO) {
+      paint(document.querySelector(`#${elId} .card-body`), spec, elId);
+    }
   }
 
   let resizeTimer = null;
   addEventListener("resize", () => {
     clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => { for (const id of nodes.keys()) drawChart(id); }, 150);
+    resizeTimer = setTimeout(() => {
+      drawIntro();
+      for (const id of nodes.keys()) drawChart(id);
+    }, 150);
   });
 
+  // Page-kept values (It.store): questions waiting for Claude's echo, and snapshot charts being refreshed.
   function pending() {
     const value = It.store.get("pending");
+    return value && typeof value === "object" ? value : {};
+  }
+  function refreshing() {
+    const value = It.store.get("refreshing");
+    return value && typeof value === "object" ? value : {};
+  }
+  function confirming() {
+    const value = It.store.get("confirming");
     return value && typeof value === "object" ? value : {};
   }
 
@@ -302,6 +539,23 @@
       if (echoed.has(ref) || Date.now() - p.at > 600_000) { delete waiting[ref]; changed = true; }
     }
     if (changed) It.store.set("pending", waiting);
+
+    // A refresh is over once Claude rewrote that chart (or after 2 minutes).
+    const spinning = refreshing();
+    let spunDown = false;
+    for (const [id, since] of Object.entries(spinning)) {
+      const chart = chat[id]?.chart;
+      if (!chart || (chart.asOf ?? chat[id].at ?? 0) > since || Date.now() - since > 120_000) { delete spinning[id]; spunDown = true; }
+    }
+    if (spunDown) It.store.set("refreshing", spinning);
+
+    const choices = confirming();
+    let answered = false;
+    for (const id of Object.keys(choices)) {
+      // Answered by Claude, gone, or no answer within a minute (so the buttons work again).
+      if (!chat[id]?.confirm || chat[id].confirm.status || Date.now() - (choices[id]?.at ?? 0) > 60_000) { delete choices[id]; answered = true; }
+    }
+    if (answered) It.store.set("confirming", choices);
 
     const items = [
       ...Object.entries(chat).filter(([, m]) => m),
@@ -318,11 +572,16 @@
     for (let i = items.length - 1; i >= 0; i -= 1) {
       const [id, item] = items[i];
       let node = nodes.get(id);
-      if (!node || JSON.stringify(node.item) !== JSON.stringify(item)) {
+      if (
+        !node ||
+        JSON.stringify(node.item) !== JSON.stringify(item) ||
+        (item.chart && node.spun !== Boolean(spinning[id])) ||
+        (item.confirm && node.choice !== choices[id]?.choice)
+      ) {
         const el = messageEl(id, item);
         if (node) node.el.replaceWith(el);
         else added = true;
-        node = { el, item };
+        node = { el, item, spun: Boolean(spinning[id]), choice: choices[id]?.choice };
         nodes.set(id, node);
         fresh.push(id);
       }
@@ -337,16 +596,23 @@
     }
   }
 
-  // ---------- header ----------
+  // ---------- stat tiles + header ----------
   function renderStats() {
     if (!live) return;
     const t = live.totals, ai = live.ai;
-    const stat = (label, value, cls = "") => `<div class="stat"><span class="label">${esc(label)}</span><span class="num ${cls}">${esc(value)}</span></div>`;
+    const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+    const stat = (label, value, sub, cls = "") =>
+      `<div class="stat"><span class="label">${esc(label)}</span><span class="num ${cls}">${esc(value)}</span><span class="sub">${esc(sub)}</span></div>`;
+    const top = [...live.players].sort((a, b) => b.total - a.total)[0];
+    const busiest = [...live.tables].sort((a, b) => b.humans - a.humans)[0];
     $("stats").innerHTML =
-      stat(t.conserved ? "Dining Dollars · conserved" : "Dining Dollars · NOT conserved", fmt(t.total, "dd"), t.conserved ? "gold" : "bad") +
-      stat(`Online · ${t.atTables} at tables`, t.online) +
-      stat(`AI decisions · ${ai.fallbacks} fallback${ai.fallbacks === 1 ? "" : "s"}`, fmt(ai.calls, "int")) +
-      stat(`AI think time · p95 ${fmt(ai.p95Ms, "ms")}`, fmt(ai.avgMs, "ms"));
+      stat("Players online", fmt(t.online, "int"), `${t.atTables} at tables · ${t.known} this run`) +
+      stat("Tables open", fmt(live.tables.length, "int"), busiest && busiest.humans > 0 ? `Busiest: ${busiest.name} (${plural(busiest.humans, "player")})` : `${t.pokerTables} poker · ${t.blackjackTables} blackjack`) +
+      stat("AI decisions", fmt(ai.calls, "int"), `${fmt(ai.avgMs, "ms")} avg · ${fmt(ai.costUsd, "usd")}${ai.fallbacks > 0 ? ` · ${plural(ai.fallbacks, "fallback")}` : ""}`) +
+      (top ? stat("Top player", top.name, fmt(top.total, "dd"), "name gold") : stat("Top player", "—", "Nobody yet"));
+    const conserved = $("conserved");
+    conserved.textContent = t.conserved ? `${fmt(t.total, "dd")} · conserved ✓` : `Chips NOT conserved (off by ${fmt(t.total - t.expected, "dd")})`;
+    conserved.classList.toggle("bad", !t.conserved);
   }
 
   setInterval(() => {
@@ -355,6 +621,7 @@
     const el = $("updated");
     el.textContent = ago > 30 ? `No data for ${ago}s · is npm run it:live running?` : `Live · ${ago}s ago`;
     el.classList.toggle("stale", ago > 30);
+    el.classList.remove("waiting");
   }, 1000);
 
   It.onState((state) => {
@@ -362,6 +629,7 @@
     live = state.live ?? live;
     if (fresh) {
       renderStats();
+      drawIntro();
       for (const id of nodes.keys()) drawChart(id);
     }
     renderChat(state);
@@ -384,6 +652,32 @@
     $("ask").value = "";
   });
   $("clear").addEventListener("click", () => It.action("clear", {}).catch(() => {}));
+  chatEl.addEventListener("click", (e) => {
+    const confirmButton = e.target.closest("[data-confirm]");
+    if (confirmButton) {
+      const id = confirmButton.dataset.confirm;
+      const choice = confirmButton.dataset.choice;
+      const earlier = confirming()[id];
+      if (earlier && Date.now() - earlier.at < 60_000) return; // already answered; Claude is on it
+      It.store.set("confirming", { ...confirming(), [id]: { choice, at: Date.now() } });
+      It.action("confirm", { id, choice }).catch(() => {});
+      renderChat(It.state);
+      return;
+    }
+    const button = e.target.closest("[data-refresh]");
+    if (!button) return;
+    const id = button.dataset.refresh;
+    const chat = It.state.chat ?? {};
+    const item = chat[id];
+    if (!item?.chart) return;
+    // The question this chart answered: the latest user message before it.
+    const question = Object.values(chat)
+      .filter((m) => m?.role === "user" && (m.at ?? 0) < item.at)
+      .sort((a, b) => b.at - a.at)[0]?.text ?? null;
+    It.store.set("refreshing", { ...refreshing(), [id]: Date.now() });
+    button.classList.add("spinning");
+    It.action("refresh", { id, title: item.chart.title ?? null, query: item.chart.query ?? null, question }).catch(() => {});
+  });
   $("chips").innerHTML = SUGGESTIONS.map((s) => `<button class="chip" type="button">${esc(s)}</button>`).join("");
   $("chips").addEventListener("click", (e) => {
     const chip = e.target.closest(".chip");
