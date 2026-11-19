@@ -112,6 +112,7 @@ apps/
     src/networking/gameStore.ts   createGameStore(): buffers a game's state messages outside React (animations never drop events)
     src/networking/pokerStore.ts, blackjackStore.ts  The two stores built from it
     src/components/ClockBlock.tsx  ClockBlock + useNow, shared by both table pages
+    src/components/ChipChart.tsx   Career chips-over-time chart (SVG, hover/keyboard tooltip)
     src/pages/                NamePage (name + Public/Private career), HomePage, PokerLobbyPage (sortable/filterable room list, buy-in/create dialogs),
                               CareerPage (stats panels, table history with expandable hands), LeaderboardPage,
                               BlackjackLobbyPage, BlackjackTablePage (strip; sidebar BetPanel / insurance / PlayPanel),
@@ -267,6 +268,12 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
   blackjack, bust, double and surrender % (per hand) and split and insurance % (per round). Blackjack money is vs the house.
 - **Vs players / vs bots (poker):** each hand's losses are spread over its winners in proportion to their profit
   (`pokerAttribution.ts`); the two always add up to the hand's net.
+- **Chips-over-time chart** (`components/ChipChart.tsx`, plain SVG, between the career totals and the game panels):
+  total Dining Dollars after every hand (`CareerView.chipHistory`: starting bankroll + running net, kept by the store,
+  last 5,000 points). One gold 2px line; each hand is a node, the game told apart by **shape + fill, not a second hue**
+  (poker = solid gold square, blackjack = hollow gold diamond; KSU gold fails the categorical lightness band, so no
+  gold-vs-other-colour pair). $10,000 start reference line, end label, crosshair + tooltip that also works with
+  arrow keys / Home / End, Last 50 / Last 200 / All once there are 50+ hands, nodes hidden below 6px per hand.
 - **Leaderboard ranks by Dining Dollars only** (bankroll + chips at a poker table). Everyone who picked a name this
   server run is listed.
 - **Privacy:** chosen on the name page (Public / Private, saved in localStorage `owl-in:career-public`). Changeable on

@@ -22,6 +22,7 @@ export function careerView(stats: StatsStore, target: HumanPlayer, viewer: Human
     poker: totals.poker,
     blackjack: totals.blackjack,
     sessions: totals.sessions,
+    chipHistory: totals.chipHistory,
   };
 }
 

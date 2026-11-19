@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { handTotal } from "@owl-in/game-engine";
 import {
+  STARTING_BANKROLL,
   emptyBlackjackStats,
   emptyPokerStats,
   type BlackjackRoundRecord,
@@ -16,6 +17,9 @@ export const MAX_HANDS_PER_PLAYER = 5_000;
 
 interface PlayerStats extends CareerTotals {
   hands: HandRecord[];
+  /** Hands played so far, and Dining Dollars now (starting bankroll + every hand's net). */
+  handCount: number;
+  total: number;
 }
 
 /** Career stats in server memory. A restart wipes them, just like bankrolls. */
@@ -107,6 +111,7 @@ export class MemoryStatsStore implements StatsStore {
       poker: { ...s.poker },
       blackjack: { ...s.blackjack },
       sessions: s.sessions.map((session) => ({ ...session })).reverse(),
+      chipHistory: s.chipHistory.map((point) => ({ ...point })),
     };
   }
 
@@ -124,12 +129,25 @@ export class MemoryStatsStore implements StatsStore {
     }
     stats.hands.push(record);
     if (stats.hands.length > MAX_HANDS_PER_PLAYER) stats.hands.splice(0, stats.hands.length - MAX_HANDS_PER_PLAYER);
+    // Only hands move money between players and the house, so the running total is the player's Dining Dollars.
+    stats.handCount += 1;
+    stats.total += record.net;
+    stats.chipHistory.push({ hand: stats.handCount, at: record.at, game: record.game, net: record.net, total: stats.total });
+    if (stats.chipHistory.length > MAX_HANDS_PER_PLAYER) stats.chipHistory.splice(0, stats.chipHistory.length - MAX_HANDS_PER_PLAYER);
   }
 
   private stats(playerId: string): PlayerStats {
     let s = this.players.get(playerId);
     if (!s) {
-      s = { poker: emptyPokerStats(), blackjack: emptyBlackjackStats(), sessions: [], hands: [] };
+      s = {
+        poker: emptyPokerStats(),
+        blackjack: emptyBlackjackStats(),
+        sessions: [],
+        hands: [],
+        chipHistory: [],
+        handCount: 0,
+        total: STARTING_BANKROLL,
+      };
       this.players.set(playerId, s);
     }
     return s;

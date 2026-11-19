@@ -106,6 +106,16 @@ export interface BlackjackRoundRecord {
 
 export type HandRecord = PokerHandRecord | BlackjackRoundRecord;
 
+/** One point per finished hand / round: the player's total Dining Dollars right after it. */
+export interface ChipPoint {
+  /** 1 for the player's first hand (the line starts at 0 = the starting bankroll). */
+  hand: number;
+  at: number;
+  game: GameType;
+  net: number;
+  total: number;
+}
+
 export interface CareerView {
   playerId: string;
   name: string;
@@ -120,6 +130,8 @@ export interface CareerView {
   blackjack: BlackjackStats;
   /** Newest first. */
   sessions: TableSession[];
+  /** Total Dining Dollars after every hand, oldest first (the most recent 5,000). */
+  chipHistory: ChipPoint[];
 }
 
 export interface LeaderboardRow {

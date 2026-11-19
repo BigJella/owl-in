@@ -1,6 +1,7 @@
 import type {
   BlackjackRoundRecord,
   BlackjackStats,
+  ChipPoint,
   GameType,
   HandRecord,
   PokerHandRecord,
@@ -22,6 +23,7 @@ export interface CareerTotals {
   poker: PokerStats;
   blackjack: BlackjackStats;
   sessions: TableSession[];
+  chipHistory: ChipPoint[];
 }
 
 /**

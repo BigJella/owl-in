@@ -12,6 +12,7 @@ import {
   type TableSession,
 } from "@owl-in/shared";
 import { socket } from "../networking/socket";
+import { ChipChart } from "../components/ChipChart";
 import { PrivacyToggle } from "./NamePage";
 
 const fmt = formatDD;
@@ -391,6 +392,8 @@ export function CareerPage(props: { playerId: string | null; onBack: () => void;
           <strong>{c.poker.hands + c.blackjack.hands}</strong>
         </div>
       </div>
+
+      <ChipChart points={c.chipHistory} />
 
       <div className="career-games">
         <PokerPanel s={c.poker} />

@@ -106,6 +106,10 @@ describe("recording from rooms", () => {
     const hands = stats.sessionHands(me.id, session.id);
     expect(stack - 1_000).toBe(hands.reduce((s, h) => s + h.net, 0));
     expect(now.net).toBe(stack - 1_000);
+    // The chart's running total ends at the starting bankroll plus every recorded hand.
+    const history = stats.career(me.id).chipHistory;
+    expect(history.map((p) => p.hand)).toEqual(history.map((_, i) => i + 1));
+    expect(history.at(-1)!.total).toBe(10_000 + stats.career(me.id).poker.net);
     const first = hands[0]!;
     expect(first.game === "poker" && first.holeCards?.length).toBe(2);
 
@@ -153,6 +157,7 @@ describe("recording from rooms", () => {
     expect(me.bankroll - before).toBe(10);
     const [round] = stats.sessionHands(me.id, stats.career(me.id).sessions[0]!.id);
     expect(round).toMatchObject({ game: "blackjack", net: 10, dealer: { total: 18 } });
+    expect(stats.career(me.id).chipHistory).toEqual([{ hand: 1, at: expect.any(Number), game: "blackjack", net: 10, total: 10_010 }]);
     room.close();
     expect(stats.career(me.id).sessions[0]!.endReason).toBe("table closed");
   });
