@@ -248,6 +248,10 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
   **+30s when the turn passes to you** from someone else, **+5s for each further decision** you make in a row (hits, your next
   hand or spot), **capped at 60s**, auto-stand at 0 (`BJ_TURN_REFILL_MS`, `BJ_DECISION_REFILL_MS`, `BJ_TIME_BANK_MAX_MS`). Bots think 0.8–1.6s. Results stay up 3s (after their animation),
   then cards are swept to the tray. Bot-only tables deal one round per 20s.
+- **Blackjack felt text:** small "SHOE" / "DISCARD" labels and "DEALER" are always shown; "BLACKJACK PAYS 3 TO 2" and
+  "DEALER STANDS ON ALL 17S · INSURANCE PAYS 2 TO 1" only during the betting round (hidden as soon as cards are dealt).
+  The acting player is shown by the spot box, name plate and clock; **no outline around the hand's cards** (it moved as
+  cards were added).
 - Spots you didn't bet on are released when betting closes. Rebet repeats last round's bets.
 - **Giving up a spot** (`blackjack:leave-spot`, e.g. to scale down so others can sit): during betting it's immediate and
   the bet is refunded ("Leave spot" in the bet panel); mid-round the spot plays out and is freed when the round ends

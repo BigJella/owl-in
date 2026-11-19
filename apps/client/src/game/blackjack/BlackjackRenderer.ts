@@ -69,7 +69,6 @@ interface SpotNode {
   badge: Container;
   note: Text;
   timer: Graphics;
-  highlight: Graphics;
   cards: Container;
   pills: Container;
   geom: { box: Point; plate: Point; origin: Point };
@@ -104,6 +103,8 @@ export class BlackjackRenderer {
   private readonly root = new Container();
   private readonly felt = new Graphics();
   private readonly feltLabels = new Container();
+  /** "BLACKJACK PAYS 3 TO 2" and the house rules: shown only during the betting round. */
+  private readonly feltPrint = new Container();
   private readonly shoeGfx = new Graphics();
   private readonly trayGfx = new Graphics();
   private readonly dealerCards: Sprite[] = [];
@@ -155,7 +156,7 @@ export class BlackjackRenderer {
 
     for (let spot = 0; spot < BJ_SPOTS; spot += 1) this.nodes.push(this.makeSpot(spot));
 
-    this.root.addChild(this.felt, this.feltLabels, this.shoeGfx, this.trayGfx, this.spotsLayer, this.cardsLayer, this.pillsLayer, this.dealerPill, this.message, this.fx);
+    this.root.addChild(this.felt, this.feltLabels, this.feltPrint, this.shoeGfx, this.trayGfx, this.spotsLayer, this.cardsLayer, this.pillsLayer, this.dealerPill, this.message, this.fx);
     this.app.stage.addChild(this.root);
     this.app.renderer.on("resize", this.fit);
     this.app.ticker.add(this.tick);
@@ -223,6 +224,7 @@ export class BlackjackRenderer {
       switch (e.type) {
         case "roundStarted":
           tl.call(() => {
+            this.feltPrint.visible = false;
             this.notes.fill("");
             this.net = this.freshNet();
             this.model.dealer = [];
@@ -477,6 +479,7 @@ export class BlackjackRenderer {
     this.showMessage(
       view.stage === "betting" ? "Place your bets" : view.stage === "insurance" ? "Insurance?" : "",
     );
+    this.feltPrint.visible = view.stage === "betting";
   }
 
   private renderAll(view: BlackjackTableView) {
@@ -547,18 +550,6 @@ export class BlackjackRenderer {
     });
     for (let i = used; i < sprites.length; i += 1) sprites[i]!.visible = false;
 
-    const view = this.view;
-    const ref = view?.toAct;
-    node.highlight.clear();
-    if (ref && ref.spot === spot && hands[ref.hand]) {
-      const count = hands[ref.hand]!.cards.length;
-      const first = this.cardPos(spot, ref.hand, hands.length, 0);
-      const last = this.cardPos(spot, ref.hand, hands.length, Math.max(0, count - 1));
-      const pad = 6;
-      node.highlight
-        .rect(first.x - CARD_W / 2 - pad, last.y - CARD_H / 2 - pad, last.x - first.x + CARD_W + pad * 2, first.y - last.y + CARD_H + pad * 2)
-        .stroke({ width: 2, color: GOLD });
-    }
     this.refreshChip(spot);
   }
 
@@ -737,6 +728,22 @@ export class BlackjackRenderer {
       t.position.set(box.x, box.y + box.h / 2 + 10);
       this.feltLabels.addChild(t);
     }
+    const dealer = label(11, MUTED, "600");
+    dealer.text = "DEALER";
+    dealer.style.letterSpacing = 3;
+    dealer.position.set(CX, 42);
+    this.feltLabels.addChild(dealer);
+
+    const pays = label(20, GOLD_DIM, "600");
+    pays.text = "BLACKJACK PAYS 3 TO 2";
+    pays.style.letterSpacing = 4;
+    pays.position.set(CX, 248);
+    const rules = label(12, MUTED, "500");
+    rules.text = "DEALER STANDS ON ALL 17S   ·   INSURANCE PAYS 2 TO 1";
+    rules.style.letterSpacing = 2;
+    rules.position.set(CX, 274);
+    this.feltPrint.addChild(pays, rules);
+    this.feltPrint.visible = false;
   }
 
   private makeSpot(spot: number): SpotNode {
@@ -773,13 +780,12 @@ export class BlackjackRenderer {
     plate.addChild(plateBg, timer, name, badge, note);
     plate.visible = false;
 
-    const highlight = new Graphics();
     const cards = new Container();
     const pills = new Container();
     this.spotsLayer.addChild(box, boxNumber, chip, chipText, plate);
-    this.cardsLayer.addChild(highlight, cards);
+    this.cardsLayer.addChild(cards);
     this.pillsLayer.addChild(pills);
-    return { box, boxNumber, chip, chipText, plate, plateBg, name, badge, note, timer, highlight, cards, pills, geom };
+    return { box, boxNumber, chip, chipText, plate, plateBg, name, badge, note, timer, cards, pills, geom };
   }
 
   private makeCard(width: number, height: number): Sprite {
