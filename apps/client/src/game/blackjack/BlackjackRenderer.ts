@@ -676,8 +676,12 @@ export class BlackjackRenderer {
 
   // ---------- geometry ----------
 
+  /** Breathing room around the table, in design-space pixels. */
+  private static readonly MARGIN = 28;
+
   private fit = (width: number, height: number) => {
-    const scale = Math.min(width / W, height / H);
+    const m = BlackjackRenderer.MARGIN;
+    const scale = Math.min(width / (W + 2 * m), height / (H + 2 * m));
     this.root.scale.set(scale);
     this.root.position.set((width - W * scale) / 2, (height - H * scale) / 2);
   };

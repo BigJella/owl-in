@@ -10,6 +10,7 @@ import { PokerTablePage } from "./pages/PokerTablePage";
 import { BlackjackLobbyPage } from "./pages/BlackjackLobbyPage";
 import { BlackjackTablePage } from "./pages/BlackjackTablePage";
 import { CareerPage } from "./pages/CareerPage";
+import { NameEditor } from "./components/NameEditor";
 import { LeaderboardPage } from "./pages/LeaderboardPage";
 
 type Screen = "home" | "poker" | "blackjack" | "career" | "leaderboard";
@@ -126,10 +127,23 @@ export default function App() {
     const id = window.setTimeout(() => setNavHint(null), 4000);
     return () => window.clearTimeout(id);
   }, [navHint]);
-  // Leaving the table clears it straight away.
+  /** Centre of your name in the nav while the rename box is open, or null. */
+  const [renaming, setRenaming] = useState<number | null>(null);
+  // Leaving the table clears the hint straight away; sitting down closes the rename box.
   useEffect(() => {
     if (!session?.roomId) setNavHint(null);
+    else setRenaming(null);
   }, [session?.roomId]);
+
+  /** Click on your name: rename (away from tables), or the "leave your table first" hint. */
+  function openRename(anchor: HTMLElement) {
+    if (!session) return;
+    const rect = anchor.getBoundingClientRect();
+    const center = rect.left + rect.width / 2;
+    if (session.roomId) return setNavHint(center);
+    setNavHint(null);
+    setRenaming(center);
+  }
 
   /** Nav clicks: go there, or (while seated) explain why not. */
   function navigate(go: () => void, anchor: HTMLElement) {
@@ -229,6 +243,18 @@ export default function App() {
             </button>
           ))}
         </div>
+        {renaming !== null && session && (
+          <NameEditor
+            current={session.name}
+            center={renaming}
+            onClose={() => setRenaming(null)}
+            onDone={(next) => {
+              saveName(next.name);
+              setSession(next);
+              setRenaming(null);
+            }}
+          />
+        )}
         {navHint !== null && (
           <div className="nav-hint" role="alert" ref={navHintRef} style={{ left: navHint }}>
             <span>You must leave your current table first.</span>
@@ -239,10 +265,15 @@ export default function App() {
         )}
         {session && (
           <div className="chip-balance">
-            <span>
-              {session.name}
+            <button
+              className={`name-button ${session.roomId ? "locked" : ""}`}
+              title={session.roomId ? "Leave your table to change your name" : "Change your name"}
+              aria-disabled={Boolean(session.roomId)}
+              onClick={(e) => openRename(e.currentTarget)}
+            >
+              <span className="name-text">{session.name}</span>
               <small>{CURRENCY_NAME}</small>
-            </span>
+            </button>
             <strong>{formatDD(session.bankroll)}</strong>
           </div>
         )}

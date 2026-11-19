@@ -96,8 +96,29 @@ h1, h2, h3, .display { font-family: var(--display); text-transform: uppercase; f
 }
 .nav-hint button { border: 0; background: none; padding: 0; color: var(--muted); font-size: 15px; line-height: 1; }
 .nav-hint button:hover { color: var(--gold); }
+/* Rename box: the same small popover, with an input row and an optional message line under it. */
+.name-editor { flex-direction: column; align-items: stretch; gap: 6px; padding: 8px 8px 8px 10px; white-space: normal; width: 270px; }
+.name-editor-row { display: flex; align-items: center; gap: 6px; }
+.name-editor input {
+  flex: 1; min-width: 0; height: 30px; padding: 0 8px; border: 1px solid var(--line); background: var(--black);
+  font-size: 13px; outline: none;
+}
+.name-editor input:focus { border-color: var(--gold); }
+.name-editor input.invalid { border-color: var(--danger); }
+.name-editor .name-save {
+  height: 30px; padding: 0 10px; border: 1px solid var(--gold); background: var(--gold); color: var(--black);
+  font-family: var(--display); font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase;
+}
+.name-editor .name-save:hover:not(:disabled) { color: var(--black); background: #ffc94d; }
+.name-editor .name-save:disabled { background: var(--surface-2); border-color: var(--line); color: var(--muted); }
+.name-editor-msg { margin: 0; font-size: 12px; color: var(--danger); }
 .chip-balance { margin-left: auto; display: flex; align-items: center; gap: 12px; }
-.chip-balance > span { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.25; font-size: 13px; }
+.chip-balance > span, .name-button { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.25; font-size: 13px; }
+/* Your name doubles as the rename button. */
+.name-button { border: 0; background: none; padding: 0; color: inherit; text-align: right; }
+.name-button .name-text { border-bottom: 1px dotted transparent; }
+.name-button:hover:not(.locked) .name-text { color: var(--gold); border-bottom-color: var(--gold); }
+.name-button.locked { cursor: not-allowed; }
 .chip-balance small { color: var(--muted); font-family: var(--display); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; }
 .chip-balance strong {
   border: 1px solid var(--gold); color: var(--gold); padding: 8px 12px;

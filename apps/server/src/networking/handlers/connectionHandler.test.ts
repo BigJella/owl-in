@@ -26,7 +26,10 @@ function fakeSocket(token: unknown) {
   } as unknown as GameSocket;
   const identify = (request: unknown) =>
     new Promise<AckResult<{ session: Session }>>((resolve) => handlers.get("identify")!(request, resolve));
-  return { socket, sent, identify };
+  const rename = (name: unknown) => new Promise<AckResult<{ session: Session }>>((resolve) => handlers.get("rename")!(name, resolve));
+  const check = (name: unknown) =>
+    new Promise<AckResult<{ available: boolean; reason: string | null }>>((resolve) => handlers.get("name:check")!(name, resolve));
+  return { socket, sent, identify, rename, check };
 }
 
 function server() {
@@ -86,5 +89,38 @@ describe("identify (verified on every load)", () => {
     const { connect } = server();
     expect(await connect(undefined).identify({ name: "Alice", careerPublic: true })).toMatchObject({ ok: false, code: "token" });
     expect(await connect("bad token!").identify({ name: "Alice", careerPublic: true })).toMatchObject({ ok: false, code: "token" });
+  });
+});
+
+describe("renaming", () => {
+  it("checks names live: free, taken (even offline) or invalid; your own name counts as free", async () => {
+    const { registry, connect } = server();
+    registry.identify(OTHER, "Bob");
+    const me = connect(TOKEN);
+    await me.identify({ name: "Alice", careerPublic: true });
+    expect(await me.check("Alicia")).toEqual({ ok: true, available: true, reason: null });
+    expect(await me.check("alice")).toEqual({ ok: true, available: true, reason: null });
+    expect(await me.check("BOB")).toMatchObject({ ok: true, available: false, reason: expect.stringMatching(/belongs to another player/) });
+    expect(await me.check("")).toMatchObject({ ok: true, available: false });
+  });
+
+  it("renames away from tables and frees the old name", async () => {
+    const { registry, connect } = server();
+    const me = connect(TOKEN);
+    await me.identify({ name: "Alice", careerPublic: true });
+    expect(await me.rename("Alicia")).toMatchObject({ ok: true, session: { name: "Alicia" } });
+    expect(registry.nameTaken(OTHER, "Alice")).toBe(false);
+    expect(registry.nameTaken(OTHER, "Alicia")).toBe(true);
+  });
+
+  it("refuses while you're at a table, or if the name is taken", async () => {
+    const { registry, connect } = server();
+    registry.identify(OTHER, "Bob");
+    const me = connect(TOKEN);
+    await me.identify({ name: "Alice", careerPublic: true });
+    expect(await me.rename("bob")).toMatchObject({ ok: false, code: "name" });
+    registry.get(TOKEN)!.roomId = "some-table";
+    expect(await me.rename("Alicia")).toMatchObject({ ok: false, code: "seated" });
+    expect(registry.get(TOKEN)!.name).toBe("Alice");
   });
 });

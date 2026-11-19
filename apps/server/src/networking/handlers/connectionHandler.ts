@@ -95,6 +95,34 @@ export function registerConnection(socket: GameSocket, { registry, rooms, blackj
     publishLobby();
   });
 
+  /** The cleaned-up name, or why this browser can't use it. */
+  const nameProblem = (raw: unknown): { name: string } | { reason: string } => {
+    const name = nameSchema.safeParse(raw);
+    if (!name.success) return { reason: name.error.issues[0]?.message ?? "Invalid name." };
+    if (token && registry.nameTaken(token, name.data)) return { reason: "That name belongs to another player." };
+    return { name: name.data };
+  };
+
+  socket.on("name:check", (raw, ack) => {
+    const me = requirePlayer(ack);
+    if (!me) return;
+    const result = nameProblem(raw);
+    reply(ack, "reason" in result ? { ok: true, available: false, reason: result.reason } : { ok: true, available: true, reason: null });
+  });
+
+  socket.on("rename", (raw, ack) => {
+    const me = requirePlayer(ack);
+    if (!me || !token) return;
+    // Names show on seats, waiting lists and table history: change them only away from tables.
+    if (me.roomId) return reply(ack, { ok: false, code: "seated", error: "You must leave your current table first." });
+    const result = nameProblem(raw);
+    if ("reason" in result) return reply(ack, { ok: false, code: "name", error: result.reason });
+    const renamed = registry.identify(token, result.name);
+    if ("error" in renamed) return reply(ack, { ok: false, code: "name", error: renamed.error });
+    reply(ack, { ok: true, session: renamed.session() });
+    publishLobby();
+  });
+
   socket.on("get-lobby", () => publishLobby());
 
   socket.on("poker:subscribe-rooms", () => {

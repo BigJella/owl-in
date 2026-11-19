@@ -14,6 +14,10 @@ export interface ClientToServerEvents {
    * means the browser has no saved choice yet.
    */
   identify: (request: { name: string; careerPublic: boolean | null }, ack: Ack<{ session: Session }>) => void;
+  /** Live check while typing a new name: is it valid and free (your own current name counts as free)? */
+  "name:check": (name: string, ack: Ack<{ available: boolean; reason: string | null }>) => void;
+  /** Change your name. Only away from tables (`code: "seated"`); `code: "name"` if invalid or taken. */
+  rename: (name: string, ack: Ack<{ session: Session }>) => void;
   /** null = your own career. */
   "career:get": (playerId: string | null, ack: Ack<{ career: CareerView }>) => void;
   /** Every hand / round of one table session. */

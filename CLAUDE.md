@@ -248,6 +248,7 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
   **+30s when the turn passes to you** from someone else, **+5s for each further decision** you make in a row (hits, your next
   hand or spot), **capped at 60s**, auto-stand at 0 (`BJ_TURN_REFILL_MS`, `BJ_DECISION_REFILL_MS`, `BJ_TIME_BANK_MAX_MS`). Bots think 0.8–1.6s. Results stay up 3s (after their animation),
   then cards are swept to the tray. Bot-only tables deal one round per 20s.
+- **Blackjack table margin:** the renderer fits the 1200×720 design plus a 28px margin on every side (`BlackjackRenderer.MARGIN`), so the rail never touches the canvas edge.
 - **Blackjack felt text:** small "SHOE" / "DISCARD" labels and "DEALER" are always shown; "BLACKJACK PAYS 3 TO 2" and
   "DEALER STANDS ON ALL 17S · INSURANCE PAYS 2 TO 1" only during the betting round (hidden as soon as cards are dealt).
   The acting player is shown by the spot box, name plate and clock; **no outline around the hand's cards** (it moved as
@@ -300,6 +301,10 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
   missing/garbage → name shown **locked and greyed**, only Public / Private asked, nothing preselected).
 - **Names are unique per server run**, case-insensitive: a name belongs to the first token that claims it, even while
   that player is offline (`PlayerRegistry.nameTaken`). Renaming frees your old name. A restart clears all names.
+- **Renaming:** click your name in the navbar (away from tables only; while seated or waiting for a seat it shows the
+  "leave your table first" hint, and the server's `rename` refuses with `code: "seated"`). A small popover in the nav-hint
+  style with an input + Save; `name:check` runs as you type, and a taken or invalid name turns the box red with the
+  reason. Enter saves, Escape / × / click outside cancels. The new name is saved to localStorage.
 
 ---
 
