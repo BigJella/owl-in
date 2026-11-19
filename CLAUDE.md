@@ -124,6 +124,8 @@ apps/
     src/networking/gameStore.ts   createGameStore(): buffers a game's state messages outside React (animations never drop events)
     src/networking/pokerStore.ts, blackjackStore.ts  The two stores built from it
     src/components/ClockBlock.tsx  ClockBlock + useNow, shared by both table pages
+    src/hardware/              Owl Dial: Web Serial connection, protocol + gestures, useDial hooks (see **Owl Dial**)
+    src/components/DialControl.tsx  Nav "Connect dial" control
     src/components/ChipChart.tsx   Career chips-over-time chart (SVG, hover/keyboard tooltip)
     src/admin/                Admin panel (second Vite entry, admin.html): AdminApp (Overview / Tables / Players / Timeouts /
                               AI log tabs, dialogs), api.ts (fetch wrapper with X-Owl-Admin), admin.css
@@ -176,6 +178,7 @@ packages/
     src/events.ts             ClientToServerEvents / ServerToClientEvents (Socket.IO generics on both ends)
 scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), it-live.mjs (itcan.do bridge), generate-placeholder-cards.mjs
 it/owl-live/index.html        The itcan.do chat query page (live stats strip, chat, live chart specs), fed by it-live.mjs
+hardware/owl-dial/            Owl Dial firmware (Arduino sketch + README) for the MEGA2560 controller (see **Owl Dial**)
 ```
 
 ---
@@ -442,6 +445,8 @@ it/owl-live/index.html        The itcan.do chat query page (live stats strip, ch
 - [ ] Blackjack: the canvas is small at phone width (sidebar controls are the primary UI there); consider a phone-specific layout
 - [ ] Blackjack: 3:2 is verified by tests. If it looks wrong in play, check for insured blackjacks (even money) or 21 after a split (pays 1:1)
 - [ ] Blackjack: insurance and split flows are covered by engine/room tests but were not screenshot-checked in a browser
+- [ ] **Owl Dial** firmware in `hardware/owl-dial/` (hardware session), then a full test with the real board (the browser side
+      is done and was tested with `owlDial.emit`)
 
 ---
 
@@ -557,6 +562,91 @@ only arrive while that session is open.
 - **Acknowledge every action** (`it ack <id>`) after handling it.
 - **Moderation from the chat** ("kick Sam", "ban X", the Clear button): always through the Confirm / Cancel buttons above.
 - It state lives on It's service and is shown on TVs/phones: never put tokens, IPs or hole cards in it.
+
+## Owl Dial (hardware controller)
+
+A physical controller for the player on the **server PC**: a rotary dial with a push switch plus two buttons, on an
+Arduino-compatible board, sending input over USB serial. The browser reads it with **Web Serial** and drives the table
+controls. **Status:** the browser side is built (`apps/client/src/hardware/`); the firmware (`hardware/owl-dial/`) is
+being built in a separate session against the contract below. Keyboard, mouse and touch keep working; **nothing changes on the server.**
+
+**Scope:** Chrome or Edge only (Web Serial). The page must be a secure context, so only **`http://localhost:5173` on the
+computer the board is plugged into** (LAN pages at `http://<pc-ip>` can't use Web Serial; no HTTPS work planned).
+
+**Parts:** ELEGOO MEGA2560 R3 (Arduino Mega 2560 compatible), a KY-040 push rotary encoder module (pins CLK, DT, SW, +, GND),
+2 momentary push buttons (**A**, **B**), jumper wires, and a USB-B cable.
+
+**Wiring** (every input `INPUT_PULLUP`, every switch to GND, so pressed = LOW):
+
+| Part | Pin | Mega pin |
+|---|---|---|
+| Encoder | CLK | **D2** (interrupt) |
+| Encoder | DT | **D3** (interrupt) |
+| Encoder | SW (dial press) | **D4** |
+| Encoder | + | 5V |
+| Encoder | GND | GND |
+| Button A | one leg / other leg | **D5** / GND |
+| Button B | one leg / other leg | **D6** / GND |
+
+**Firmware requirements** (`hardware/owl-dial/owl-dial.ino` + `hardware/owl-dial/README.md` with the wiring and upload steps):
+- `Serial.begin(115200)`; print `OWL-DIAL 1` once in `setup()`.
+- Encoder: quadrature **state table** driven by interrupts on D2 and D3 (CHANGE), one event per **detent** (4 valid
+  transitions; invalid transitions ignored), so fast turns never skip or double-count. Counting happens in the ISR; `loop()`
+  prints the pending steps (an ISR never calls `Serial`).
+- Buttons (SW, A, B): 20 ms debounce in `loop()` with `millis()`, an event on **press and release**. **No hold timing in
+  firmware**: the browser times holds (it draws the hold progress and owns the 1 s threshold).
+- Never block `loop()` (no `delay()`).
+
+**Serial protocol v1** (the contract between firmware and browser): 115200 baud, ASCII, one event per line, ending in `\n`
+(a `\r` before it is tolerated).
+
+| Line | Meaning |
+|---|---|
+| `OWL-DIAL 1` | Hello (sent on boot; `1` = protocol version) |
+| `R+1` / `R-1` | One detent clockwise / counter-clockwise (the firmware may send `R+3` for 3 detents at once) |
+| `P1` / `P0` | Dial pressed / released |
+| `A1` / `A0` | Button A pressed / released |
+| `B1` / `B0` | Button B pressed / released |
+
+The browser ignores any other line. Opening the port **resets the Mega** (DTR), so the hello line arrives about 1.5 s after
+connecting; that's expected. If clockwise comes out as `R-1`, fix it in the firmware (swap the CLK/DT roles), not in the
+browser.
+
+**Testing the board on its own:** Arduino IDE → board "Arduino Mega or Mega 2560", the board's COM port, upload. Serial Monitor
+at 115200, "Newline": you see `OWL-DIAL 1`, one `R+1` per click clockwise, `R-1` counter-clockwise, `P1`/`P0` for a dial
+press, and `A1`/`A0`, `B1`/`B0`. **Close the Serial Monitor before connecting the browser** (only one program can hold a COM
+port).
+
+**What each input does in the game** (the browser side; agreed with the user):
+- **A = yes / okay / hit** (does the highlighted or default action). **B = no / back / stand.** **Holding B for 1 s = fold
+  or leave** (a filling bar on the target button shows the hold; it fires once per hold). **Turning** changes an amount or
+  moves a highlight. **Pressing the dial** only commits a dialed amount (poker raise, blackjack bet).
+- Poker, your turn: turn = raise amount (±1 big blind per detent, faster when turned quickly), **press = raise**,
+  **A = check / call**, B = reset the dial to the min raise, **hold B = fold** (never folds a free check).
+  Between hands: A = ready, hold B = Leave dialog.
+- Blackjack betting: step 1, turn = highlight a seat (then **Deal** at the end once you've bet), A = choose the seat (or
+  deal); step 2, turn = bet amount, **press = bet**, B = back to step 1. Hold B = **leave that seat** if the highlighted seat is
+  yours (bet refunded), else the table Leave dialog.
+- Blackjack, your turn: turn = highlight Hit / Double / Split / Surrender (starts on Hit), **A = do it (Hit)**, **B = Stand**.
+  Insurance: A = insure, B = no. Hold B = Leave dialog.
+- Any dialog: A = its main button (Leave / Reload / Cash out), B = cancel. Rebuy dialog: turn = amount, A = reload,
+  hold B = cash out.
+
+**Browser side** (`apps/client/src/hardware/`):
+- `dialProtocol.ts`: `parseDialLine`, `createLineSplitter`, and `createGestures` (taps fire on release; B held
+  `DIAL_HOLD_MS` = 1 s fires `holdB` once and swallows its release; detents < 40 ms apart count ×5). Tested in
+  `dialProtocol.test.ts`.
+- `dial.ts`: the Web Serial connection (115200 baud, auto-reconnects to an already-allowed port on load and on plug-in)
+  and dispatch. Handlers have a **priority** (`DIAL_PRIORITY`: dialog 2 > panel 1 > page 0); an event goes down the list
+  until a handler returns `true`. `holdStart` / `holdEnd` drive the hold bar; `holdEnd` is broadcast to everyone.
+  Dialogs return `true` for everything (modal).
+- `useDial.ts`: `useDial(handler, priority, active)`, `useDialConnected`, `useHoldState` (the hold bar), `useDialMenu` /
+  `stepIndex` (highlights that skip disabled entries).
+- UI: "Connect dial" in the nav (`components/DialControl.tsx`; hidden without Web Serial and below 760px). `.dial-focus`
+  (1px gold outline) marks what the dial / A will trigger, only while connected. `.has-hold` + `.hold-fill` is the flat 3px
+  bar that fills over 1 s (the CSS duration must match `DIAL_HOLD_MS`).
+- **Testing without the board:** in dev, `owlDial.emit("R+1", "A1", "A0")` in the console (or puppeteer) feeds protocol
+  lines as if they came from the board, connected or not.
 
 ---
 

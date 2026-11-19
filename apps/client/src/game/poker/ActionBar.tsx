@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { formatDD as fmt, type PokerAction, type PokerTableView } from "@owl-in/shared";
 import { socket } from "../../networking/socket";
+import { DIAL_PRIORITY, useDial, useDialConnected, useHoldState } from "../../hardware/useDial";
 
 /**
  * Fold / check / call / raise controls, shown only when it's your turn.
@@ -21,6 +22,42 @@ export function ActionBar({ view }: { view: PokerTableView }) {
   useEffect(() => {
     if (legal) setRaiseTo(legal.minRaiseTo);
   }, [legal?.minRaiseTo, legal?.maxRaiseTo, view.handId, view.phase]);
+
+  // Owl Dial: turn = raise amount, press = raise, A = check/call, B = reset the amount, hold B = fold.
+  const dialOn = useDialConnected();
+  const hold = useHoldState();
+  useDial(
+    (event) => {
+      hold.track(event);
+      if (!legal || !me) return false;
+      const clampDial = (n: number) => Math.min(legal.maxRaiseTo, Math.max(legal.minRaiseTo, Math.round(n)));
+      switch (event.kind) {
+        case "turn":
+          if (legal.canRaise) setRaiseTo(clampDial(raiseTo + event.steps * view.bigBlind));
+          return true;
+        case "press":
+          if (legal.canRaise) socket.emit("poker:act", { type: "raise", to: raiseTo });
+          return true;
+        case "a":
+          socket.emit("poker:act", { type: legal.canCheck ? "check" : "call" });
+          return true;
+        case "b":
+          setRaiseTo(legal.minRaiseTo);
+          return true;
+        case "holdStart":
+          // Never fold a free check: the hold does nothing then (and doesn't fall through to leaving).
+          if (!legal.canCheck) hold.start();
+          return true;
+        case "holdB":
+          if (!legal.canCheck) socket.emit("poker:act", { type: "fold" });
+          return true;
+        default:
+          return false;
+      }
+    },
+    DIAL_PRIORITY.panel,
+    Boolean(legal && me),
+  );
 
   if (!legal || !me) return null;
 
@@ -43,8 +80,9 @@ export function ActionBar({ view }: { view: PokerTableView }) {
     <div className="action-bar">
       <div className="action-main">
         {!legal.canCheck && (
-          <button className="action fold" onClick={() => act({ type: "fold" })}>
+          <button className="action fold has-hold" onClick={() => act({ type: "fold" })}>
             Fold
+            {hold.holding && <span className="hold-fill danger" />}
           </button>
         )}
         {legal.canCheck ? (
@@ -102,7 +140,7 @@ export function ActionBar({ view }: { view: PokerTableView }) {
             />
           </label>
           <button
-            className="action raise"
+            className={`action raise ${dialOn ? "dial-focus" : ""}`}
             onClick={() => raise(typed === "" || typedOutOfRange ? commitTyped() : raiseTo)}
           >
             {raiseIsAllIn ? "All-in" : verb} {fmt(raiseTo)}

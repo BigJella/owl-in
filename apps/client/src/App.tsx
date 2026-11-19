@@ -11,6 +11,7 @@ import { BlackjackLobbyPage } from "./pages/BlackjackLobbyPage";
 import { BlackjackTablePage } from "./pages/BlackjackTablePage";
 import { CareerPage } from "./pages/CareerPage";
 import { NameEditor } from "./components/NameEditor";
+import { DialControl } from "./components/DialControl";
 import { LeaderboardPage } from "./pages/LeaderboardPage";
 
 type Screen = "home" | "poker" | "blackjack" | "career" | "leaderboard";
@@ -294,6 +295,7 @@ export default function App() {
             </button>
           </div>
         )}
+        <DialControl />
         {session && (
           <div className="chip-balance">
             <button

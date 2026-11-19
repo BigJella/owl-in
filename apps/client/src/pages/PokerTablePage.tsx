@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { formatDD, STAGE_LABEL, type PokerTableView } from "@owl-in/shared";
 import { ClockBlock, useNow, type Clock } from "../components/ClockBlock";
 import { socket } from "../networking/socket";
+import { DIAL_PRIORITY, useDial, useHoldState } from "../hardware/useDial";
 import { usePokerState, type ReceivedMessage } from "../networking/pokerStore";
 import { PokerScene } from "../game/poker/PokerScene";
 import { ActionBar } from "../game/poker/ActionBar";
@@ -155,6 +156,26 @@ export function PokerTablePage({
   const acting = view?.toAct ?? null;
   const actingName = acting === null ? "—" : (view?.seats[acting]?.name ?? "—");
 
+  // Owl Dial, page level: hold B = cash out (opens the Leave dialog), or back to the lobby once cashed out.
+  const leaveHold = useHoldState();
+  const canLeave = cashedOut || (view !== null && view.leaveMode !== "queued");
+  useDial(
+    (event) => {
+      leaveHold.track(event);
+      if (event.kind === "holdStart" && canLeave) {
+        leaveHold.start();
+        return true;
+      }
+      if (event.kind === "holdB" && canLeave) {
+        if (cashedOut) onLeave();
+        else setConfirmLeave(true);
+        return true;
+      }
+      return false;
+    },
+    DIAL_PRIORITY.page,
+  );
+
   return (
     <section className="poker-screen">
       {received && <TableStrip received={received} now={now} />}
@@ -211,7 +232,7 @@ export function PokerTablePage({
             {view && !cashedOut && view.readyGraceRemainingMs !== null && <ReadyPanel view={view} clock={clock} />}
             {view && !cashedOut && <ActionBar view={view} />}
             <button
-              className="secondary cashout"
+              className="secondary cashout has-hold"
               onClick={() => (cashedOut ? onLeave() : setConfirmLeave(true))}
               disabled={!cashedOut && view?.leaveMode === "queued"}
             >
@@ -222,6 +243,7 @@ export function PokerTablePage({
                   : view?.leaveMode === "after-hand"
                     ? "Cash out after this hand"
                     : "Cash out"}
+              {leaveHold.holding && <span className="hold-fill" />}
             </button>
           </div>
         </aside>
@@ -251,6 +273,14 @@ function ReadyPanel({ view, clock }: { view: PokerTableView; clock: Clock | null
   const notReady = humans.filter((s) => s!.ready === false).map((s) => s!.name);
   const me = view.mySeat === null ? null : view.seats[view.mySeat];
   const needMe = me?.ready === false;
+  useDial(
+    (event) => {
+      if (event.kind !== "a" || !needMe || view.rebuy) return false;
+      socket.emit("poker:ready");
+      return true;
+    },
+    DIAL_PRIORITY.panel,
+  );
 
   return (
     <div className="ready-panel">
@@ -293,6 +323,17 @@ function RebuyDialog(props: {
     });
   }
 
+  // Owl Dial: turn = buy-in amount, A = reload, hold B = cash out. Modal: nothing reaches the table behind it.
+  const hold = useHoldState();
+  useDial((event) => {
+    hold.track(event);
+    if (event.kind === "turn" && affordable) setAmount((a) => Math.min(rebuy.max, Math.max(rebuy.min, a + event.steps * bigBlind)));
+    if (event.kind === "a" && affordable) socket.emit("poker:rebuy", amount, (result) => !result.ok && setError(result.error));
+    if (event.kind === "holdStart") hold.start();
+    if (event.kind === "holdB") onLeave();
+    return true;
+  }, DIAL_PRIORITY.dialog);
+
   return (
     <div className="modal-backdrop">
       <form className="modal" onSubmit={submit}>
@@ -323,8 +364,9 @@ function RebuyDialog(props: {
         {error && <p className="form-error">{error}</p>}
         <p className="dialog-note">Leaving locks you out of this table for 30 minutes.</p>
         <div className="dialog-actions">
-          <button type="button" className="secondary" onClick={onLeave}>
+          <button type="button" className="secondary has-hold" onClick={onLeave}>
             Cash out
+            {hold.holding && <span className="hold-fill" />}
           </button>
           <button className="primary amount-btn" disabled={!affordable}>
             Reload {fmt(amount)}
@@ -340,6 +382,12 @@ function LeaveDialog({ view, onCancel, onConfirm }: { view: PokerTableView; onCa
   const me = view.mySeat === null ? null : view.seats[view.mySeat];
   const queued = view.leaveMode === "after-hand";
   const takeHome = me ? me.stack + me.bet : 0;
+  // Owl Dial: A = cash out, B = stay. Modal.
+  useDial((event) => {
+    if (event.kind === "a") onConfirm();
+    if (event.kind === "b") onCancel();
+    return true;
+  }, DIAL_PRIORITY.dialog);
 
   return (
     <div className="modal-backdrop" onClick={onCancel}>
