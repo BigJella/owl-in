@@ -73,7 +73,7 @@ const publishLobby = () =>
   });
 
 // Management API (localhost only). Mounted before the permissive CORS below, which must never answer for it.
-const admin = new AdminService({ registry, rooms, blackjack, bank, moderation, telemetry, publishLobby });
+const admin = new AdminService({ registry, rooms, blackjack, bank, moderation, telemetry, stats, publishLobby });
 app.use("/api/admin", adminRoutes(admin));
 
 app.use(cors());

@@ -7,8 +7,11 @@ export function canView(target: HumanPlayer, viewer: HumanPlayer): boolean {
   return target === viewer || target.careerPublic;
 }
 
-/** `chips`: what the player has at a table right now (counted with the bankroll so totals don't dip while seated). */
-export function careerView(stats: StatsStore, target: HumanPlayer, viewer: HumanPlayer, chips: number): CareerView {
+/**
+ * `chips`: what the player has at a table right now (counted with the bankroll so totals don't dip while seated).
+ * `viewer` null = the management API (an admin, not a player). Contains no cards either way.
+ */
+export function careerView(stats: StatsStore, target: HumanPlayer, viewer: HumanPlayer | null, chips: number): CareerView {
   const totals = stats.career(target.id);
   return {
     playerId: target.id,

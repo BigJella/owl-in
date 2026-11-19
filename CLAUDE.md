@@ -457,6 +457,7 @@ header `X-Owl-Admin: 1`**. Responses never contain browser tokens, IPs or hidden
 | `PATCH /tables/:id` | `{maxBots?, maxAi?}` |
 | `POST /tables/:id/close` | Close after the current hand / round |
 | `POST /bots/:id/mode` | `{mode: "auto" \| "script" \| "llm"}` (poker bots) |
+| `GET /players/:id/career` | Their career, exactly what the in-game Career page shows (`careerView`, viewer = admin; private careers too; no cards): totals, `poker` / `blackjack` stats, sessions, `chipHistory` (total after every hand) |
 | `POST /players/:id/kick` | `{timeoutMinutes?}` |
 | `POST /players/:id/ban` · `/unban` | `{reason?}` |
 | `POST /players/:id/bankroll` | `{delta}` (whole Dining Dollars, ±) |

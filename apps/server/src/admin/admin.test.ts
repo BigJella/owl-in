@@ -23,11 +23,12 @@ function setup() {
   const registry = new PlayerRegistry();
   const bank = new HouseBank();
   const moderation = new Moderation();
-  const rooms = new RoomManager({ bank, moderation });
-  const blackjack = new BlackjackRoomManager({ bank, moderation });
+  const stats = new MemoryStatsStore();
+  const rooms = new RoomManager({ bank, moderation, stats });
+  const blackjack = new BlackjackRoomManager({ bank, moderation, stats });
   rooms.seed();
   blackjack.seed();
-  const admin = new AdminService({ registry, rooms, blackjack, bank, moderation, telemetry: new LlmTelemetry(false, "test") });
+  const admin = new AdminService({ registry, rooms, blackjack, bank, moderation, stats, telemetry: new LlmTelemetry(false, "test") });
 
   /** A signed-in human with a fake socket that records what it's sent. */
   const human = (name = `p${++counter}`) => {
@@ -83,6 +84,23 @@ describe("snapshot", () => {
     expect(json).not.toContain('"suit"');
     expect(json).not.toContain(a.token);
     expect(snapshot.players[0]).toMatchObject({ name: a.player.name, atTable: 500, table: { game: "poker" } });
+  });
+});
+
+describe("career", () => {
+  it("returns the same career the game shows, private ones included, with no cards", async () => {
+    const { admin, human, poker } = setup();
+    const a = human();
+    a.player.careerPublic = false;
+    const room = poker();
+    await seatedMidHand(room, a.player);
+    await finishHand(room, a.player);
+    const career = admin.career(a.player.id);
+    expect(career).toMatchObject({ name: a.player.name, isMe: false, isPublic: false });
+    expect(career.poker.hands).toBeGreaterThanOrEqual(1);
+    expect(career.chipHistory.length).toBe(career.poker.hands + career.blackjack.hands);
+    expect(JSON.stringify(career)).not.toContain('"suit"');
+    expect(() => admin.career("nobody")).toThrow(/No player/);
   });
 });
 
