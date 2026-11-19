@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { ALLOWED_BIG_BLINDS, BJ_ALLOWED_MIN_BETS, type Ack, type AckResult } from "@owl-in/shared";
+import { Moderation } from "../../admin/Moderation";
 import type { HumanPlayer } from "../../players/HumanPlayer";
+import { nameSchema } from "../../players/names";
 import type { PlayerRegistry } from "../../players/PlayerRegistry";
 import type { BlackjackRoomManager } from "../../rooms/BlackjackRoomManager";
 import type { RoomManager } from "../../rooms/RoomManager";
@@ -12,12 +14,6 @@ export const LOBBY_CHANNEL = "poker:lobby";
 export const BLACKJACK_LOBBY_CHANNEL = "blackjack:lobby";
 
 const tokenSchema = z.string().regex(/^[\w-]{8,128}$/);
-const nameSchema = z
-  .string()
-  .trim()
-  .min(1, "Enter a name.")
-  .max(16, "Names are 16 characters max.")
-  .regex(/^[\p{L}\p{N} _.'-]+$/u, "Letters, numbers, spaces and _ . ' - only.");
 const createSchema = z.object({
   name: z.string().trim().min(1).max(24),
   bigBlind: z.number().refine((n) => (ALLOWED_BIG_BLINDS as readonly number[]).includes(n), "Unsupported blinds."),
@@ -43,6 +39,8 @@ interface Context {
   rooms: RoomManager;
   blackjack: BlackjackRoomManager;
   stats: StatsStore;
+  /** Bans: a banned browser is refused at connect and at identify. */
+  moderation?: Moderation;
   publishLobby: () => void;
 }
 
@@ -51,14 +49,21 @@ function reply<T>(ack: Ack<T> | undefined, result: AckResult<T>) {
   if (typeof ack === "function") ack(result);
 }
 
-export function registerConnection(socket: GameSocket, { registry, rooms, blackjack, stats, publishLobby }: Context) {
+export function registerConnection(socket: GameSocket, { registry, rooms, blackjack, stats, moderation = new Moderation(), publishLobby }: Context) {
   // Same token from the same browser = same player, so a refresh reclaims the seat.
   const parsedToken = tokenSchema.safeParse(socket.handshake.auth?.token);
   const token = parsedToken.success ? parsedToken.data : null;
   /** Set once this connection has passed `identify`; every other action needs it. */
   let player: HumanPlayer | null = null;
   /** The token's player, attached straight away so a refresh doesn't drop their seat, but not logged in yet. */
-  const returning = token ? (registry.get(token) ?? null) : null;
+  const known = token ? (registry.get(token) ?? null) : null;
+  const ban = known ? moderation.banOf(known.id) : null;
+  if (ban) {
+    socket.emit("banned", { reason: ban.reason });
+    socket.disconnect(true);
+    return;
+  }
+  const returning = known;
 
   if (returning) {
     returning.attach(socket);
@@ -75,6 +80,8 @@ export function registerConnection(socket: GameSocket, { registry, rooms, blackj
   // Verified on every page load: token, then name, then privacy. Nothing changes unless all three pass.
   socket.on("identify", (request, ack) => {
     if (!token) return reply(ack, { ok: false, code: "token", error: "Your browser session is invalid. Starting a new one." });
+    const existing = registry.get(token);
+    if (existing && moderation.banOf(existing.id)) return reply(ack, { ok: false, code: "banned", error: "You've been banned." });
     const name = nameSchema.safeParse(request?.name);
     if (!name.success) return reply(ack, { ok: false, code: "name", error: name.error.issues[0]?.message ?? "Invalid name." });
     if (registry.nameTaken(token, name.data)) {

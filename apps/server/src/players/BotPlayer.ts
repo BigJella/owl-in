@@ -10,6 +10,8 @@ export class BotPlayer extends Player {
   readonly kind = "bot" as const;
   /** Set by the room before each turn: false at tables with no humans (LLM bots play by script there). */
   llmAllowed = true;
+  /** An admin pinned this bot's mode; null = the room balances it against the table's AI count. */
+  override: BotMode | null = null;
 
   constructor(
     id: string,

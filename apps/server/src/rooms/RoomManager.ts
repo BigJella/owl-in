@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type { BotMode, PokerRoomSummary } from "@owl-in/shared";
+import type { BotMode, PokerRoomSummary, TableSettings } from "@owl-in/shared";
+import type { Moderation } from "../admin/Moderation";
 import type { HouseBank } from "../economy/HouseBank";
 import type { StatsStore } from "../stats/StatsStore";
 import type { HumanPlayer } from "../players/HumanPlayer";
@@ -12,8 +13,11 @@ export interface RoomManagerOptions {
   /** Career stats store shared by every room. */
   stats?: StatsStore;
   timing?: Partial<RoomTiming>;
-  /** LLM bot settings shared by every room (none = all bots script). */
+  /** The LLM call and decision log shared by every room (none = all bots play by script). */
   llm?: LlmBotOptions;
+  /** Max bots / max AI for new tables (defaults 4 / 2). */
+  defaults?: Partial<TableSettings>;
+  moderation?: Moderation;
   /** Called (batched per tick) whenever the room list changes. */
   onRoomsChanged?: (rooms: PokerRoomSummary[]) => void;
 }
@@ -30,8 +34,10 @@ export class RoomManager {
     this.create("Unlimited Swipes", 100);
   }
 
-  create(name: string, bigBlind: number): PokerRoom {
+  create(name: string, bigBlind: number, settings: Partial<TableSettings> = {}): PokerRoom {
     const room = new PokerRoom({
+      settings: { ...this.options.defaults, ...settings },
+      ...(this.options.moderation ? { moderation: this.options.moderation } : {}),
       id: randomUUID().slice(0, 8),
       name,
       bigBlind,
@@ -74,10 +80,15 @@ export class RoomManager {
     return count;
   }
 
-  /** Switch a bot between script and LLM, wherever it sits (for the admin panel). */
-  setBotMode(botId: string, mode: BotMode): boolean {
-    for (const room of this.rooms.values()) if (room.setBotMode(botId, mode)) return true;
+  /** Pin a bot to script / LLM (null = follow the table's AI count), wherever it sits. */
+  setBotOverride(botId: string, mode: BotMode | null): boolean {
+    for (const room of this.rooms.values()) if (room.setBotOverride(botId, mode)) return true;
     return false;
+  }
+
+  /** Tables still taking players (not closing). */
+  openCount(): number {
+    return [...this.rooms.values()].filter((room) => !room.closing).length;
   }
 
   shutdown() {

@@ -12,6 +12,7 @@
     "dev": "concurrently -n server,client -c magenta,cyan \"npm run dev -w apps/server\" \"npm run dev -w apps/client\"",
     "dev:client": "npm run dev -w apps/client",
     "dev:server": "npm run dev -w apps/server",
+    "it:live": "node scripts/it-live.mjs",
     "build": "npm run build -w apps/client",
     "start": "npm run start -w apps/server",
     "typecheck": "npm run typecheck --workspaces",

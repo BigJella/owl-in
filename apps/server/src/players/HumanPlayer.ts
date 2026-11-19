@@ -117,4 +117,12 @@ export class HumanPlayer extends Player {
   sendError(message: string) {
     this.socket?.emit("error-message", message);
   }
+
+  /** Banned: tell the browser, then close its connection. */
+  disconnectBanned(reason: string | null) {
+    const socket = this.socket;
+    if (!socket) return;
+    socket.emit("banned", { reason });
+    socket.disconnect(true);
+  }
 }

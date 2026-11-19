@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OWL IN Live</title>
+<style>
+  /* OWL IN look: black & KSU gold, sharp and flat. Fed by scripts/it-live.mjs (state.live) and by Claude (state.reply). */
+  :root {
+    --gold: #ffb81c; --bg: #0a0a0a; --surface: #141414; --line: #2e2e2e; --text: #f2f2f2; --muted: #8a8a8a;
+    --danger: #e0393e; --ok: #3fa34d;
+    --display: "Oswald", "Arial Narrow", "Roboto Condensed", "Helvetica Neue", sans-serif;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; border-radius: 0; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .wrap { padding: 20px clamp(16px, 3vw, 40px) 40px; max-width: 1600px; margin: 0 auto; }
+  h1, h2, .label, .num, .tag, button { font-family: var(--display); text-transform: uppercase; letter-spacing: 1px; }
+  .num { font-variant-numeric: tabular-nums; text-transform: none; }
+  header { display: flex; align-items: center; gap: 16px; border-bottom: 1px solid var(--gold); padding-bottom: 12px; }
+  h1 { margin: 0; font-size: 26px; letter-spacing: 5px; }
+  h1 b { color: var(--gold); font-weight: 700; }
+  .updated { margin-left: auto; color: var(--muted); font-family: var(--display); letter-spacing: 1px; font-size: 13px; text-transform: uppercase; }
+  .updated.stale { color: var(--danger); }
+  .reply { margin: 14px 0 0; padding: 10px 14px; border: 1px solid var(--line); border-left: 3px solid var(--gold); background: var(--surface); }
+  .reply:empty { display: none; }
+  .stats { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); border: 1px solid var(--line); background: var(--surface); margin-top: 18px; }
+  .stat { padding: 14px 16px; min-width: 0; }
+  .stat + .stat { border-left: 1px solid var(--line); }
+  .label { display: block; color: var(--muted); font-size: 11px; letter-spacing: 1.5px; }
+  .stat .num { display: block; font-family: var(--display); font-size: clamp(22px, 2.4vw, 34px); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stat small { color: var(--muted); font-size: 12px; }
+  .gold { color: var(--gold); } .bad { color: var(--danger); } .ok { color: var(--ok); } .muted { color: var(--muted); }
+  main { display: grid; grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr); gap: 20px; margin-top: 20px; }
+  h2 { font-size: 14px; letter-spacing: 3px; color: var(--muted); margin: 0 0 10px; }
+  .tables { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+  .table { border: 1px solid var(--line); background: var(--surface); }
+  .table-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; padding: 12px 14px; background: #000; border-bottom: 1px solid var(--line); }
+  .table-name { font-family: var(--display); font-size: 18px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .table-meta { grid-column: 1 / -1; color: var(--muted); font-size: 13px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .pot { font-family: var(--display); font-size: 18px; color: var(--gold); text-align: right; }
+  .seat { display: grid; grid-template-columns: 44px minmax(0, 1fr) 84px minmax(0, 1fr); gap: 10px; align-items: center; padding: 7px 14px; border-top: 1px solid var(--line); font-size: 14px; }
+  .seat:first-child { border-top: 0; }
+  .seat .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .seat .action { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+  .seat.folded { opacity: .5; }
+  .tag { display: inline-block; border: 1px solid var(--line); font-size: 10px; padding: 2px 0; width: 44px; text-align: center; letter-spacing: 1px; color: var(--muted); }
+  .tag.ai { border-color: var(--gold); color: var(--gold); }
+  .tag.human { color: var(--text); }
+  .tag.game { width: auto; padding: 2px 6px; }
+  .tag.danger { border-color: var(--danger); color: var(--danger); width: auto; padding: 2px 6px; }
+  .empty { padding: 14px; color: var(--muted); font-size: 13px; }
+  .side { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+  .list { border: 1px solid var(--line); background: var(--surface); }
+  .row { display: grid; align-items: center; gap: 10px; padding: 8px 14px; border-top: 1px solid var(--line); font-size: 14px; }
+  .row:first-child { border-top: 0; }
+  .lb { grid-template-columns: 22px minmax(0, 1fr) 96px 104px; }
+  .feed { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 52px; }
+  .ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .dot { display: inline-block; width: 7px; height: 7px; background: var(--line); margin-right: 8px; vertical-align: 1px; }
+  .dot.on { background: var(--ok); }
+  .acts { display: flex; gap: 4px; justify-content: flex-end; }
+  button { height: 26px; padding: 0 8px; background: #000; color: var(--text); border: 1px solid var(--line); font-size: 11px; cursor: pointer; }
+  button:hover { border-color: var(--gold); color: var(--gold); }
+  button.danger:hover { border-color: var(--danger); color: var(--danger); }
+  .charts { display: grid; grid-template-columns: 1fr; gap: 10px; }
+  .chart { border: 1px solid var(--line); background: var(--surface); padding: 10px 14px; }
+  .chart-head { display: flex; justify-content: space-between; align-items: baseline; }
+  .chart-head .num { font-family: var(--display); font-size: 18px; }
+  svg { display: block; width: 100%; height: 56px; margin-top: 6px; }
+  .note { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+  @media (max-width: 1100px) { .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); } .stat:nth-child(4) { border-left: 0; } .stat:nth-child(n + 4) { border-top: 1px solid var(--line); } }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  @media (max-width: 520px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } .stat:nth-child(odd) { border-left: 0; } .stat:nth-child(4) { border-left: 1px solid var(--line); } .stat:nth-child(n + 3) { border-top: 1px solid var(--line); } .tables { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>OWL IN <b>LIVE</b></h1>
+    <span class="updated" id="updated">Waiting for the server…</span>
+  </header>
+  <p class="reply" data-it-bind="reply"></p>
+
+  <section class="stats" id="stats" aria-label="Totals"></section>
+
+  <main>
+    <section>
+      <h2>Tables</h2>
+      <div class="tables" id="tables"></div>
+    </section>
+    <aside class="side">
+      <section>
+        <h2>Leaderboard</h2>
+        <div class="list" id="players"></div>
+        <p class="note">Kick and Ban ask Claude, who confirms with you first. Type anything else in the box above the page.</p>
+      </section>
+      <section>
+        <h2>AI decisions</h2>
+        <div class="list" id="feed"></div>
+      </section>
+      <section>
+        <h2>Last 15 minutes</h2>
+        <div class="charts" id="charts"></div>
+      </section>
+    </aside>
+  </main>
+</div>
+
+<script>
+  // State keys: `live` (pushed by scripts/it-live.mjs every ~2s), `reply` (Claude's answers, a line of text).
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  const dd = (n) => (n == null ? "" : `$${Math.round(n).toLocaleString("en-US")}`);
+  const secs = (ms) => `${(ms / 1000).toFixed(1)}s`;
+  let lastAt = 0;
+
+  function stat(label, value, note, cls = "") {
+    return `<div class="stat"><span class="label">${esc(label)}</span><span class="num ${cls}">${esc(value)}</span><small>${esc(note ?? "")}&nbsp;</small></div>`;
+  }
+
+  function seatRow(s) {
+    const stack = s.stack == null ? (s.bet > 0 ? dd(s.bet) : "") : dd(s.stack);
+    const action = s.action ?? (s.status === "waiting" ? "" : s.status);
+    return `<div class="seat ${s.status === "folded" ? "folded" : ""}">
+      <span class="tag ${s.kind}">${s.kind === "ai" ? "AI" : s.kind === "bot" ? "BOT" : "HUMAN"}</span>
+      <span class="name">${esc(s.name)}</span>
+      <span class="num">${esc(stack)}</span>
+      <span class="action">${esc(action)}</span>
+    </div>`;
+  }
+
+  function sparkline(values, color) {
+    if (!values || values.length < 2) return `<svg viewBox="0 0 100 40" preserveAspectRatio="none"></svg>`;
+    const min = Math.min(...values), max = Math.max(...values), span = max - min || 1;
+    const pts = values.map((v, i) => `${(i / (values.length - 1)) * 100},${38 - ((v - min) / span) * 36}`).join(" ");
+    return `<svg viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>`;
+  }
+
+  function render(state) {
+    const live = state.live;
+    if (!live) return;
+    lastAt = live.at;
+    const t = live.totals, ai = live.ai;
+
+    $("stats").innerHTML =
+      stat("All Dining Dollars", dd(t.total), t.conserved ? "Conserved" : "NOT conserved", t.conserved ? "gold" : "bad") +
+      stat("House bank", dd(t.house)) +
+      stat("Players online", t.online, `${t.atTables} at tables · ${t.known} this run`) +
+      stat("AI decisions", ai.calls, `${ai.fallbacks} fell back to script`) +
+      stat("AI think time", secs(ai.avgMs), `p95 ${secs(ai.p95Ms)}`) +
+      stat("Claude", ai.available ? "Ready" : "Not found", `${ai.model} · $${ai.costUsd.toFixed(2)} spent`, ai.available ? "ok" : "bad");
+
+    $("tables").innerHTML = live.tables.map((table) => `
+      <article class="table">
+        <div class="table-head">
+          <span class="table-name">${esc(table.name)}</span>
+          <span class="pot">${table.game === "poker" && table.pot > 0 ? dd(table.pot) : ""}</span>
+          <span class="table-meta">
+            <span class="tag game">${table.game === "poker" ? "Poker" : "Blackjack"}</span>
+            ${table.closing ? `<span class="tag danger">Closing</span>` : ""}
+            <span>${esc(table.stakes)}</span><span>${esc(table.stage)}${table.handId ? ` · #${table.handId}` : ""}</span>
+            <span>${table.humans} human${table.humans === 1 ? "" : "s"} · ${table.bots} bot${table.bots === 1 ? "" : "s"}${table.game === "poker" ? ` · <span class="gold">${table.aiBots} AI</span>` : ""}</span>
+          </span>
+        </div>
+        ${table.seats.length ? table.seats.map(seatRow).join("") : `<div class="empty">Empty</div>`}
+      </article>`).join("");
+
+    $("players").innerHTML = live.players.length
+      ? live.players.map((p, i) => `
+        <div class="row lb">
+          <span class="muted num">${i + 1}</span>
+          <span class="ellipsis"><span class="dot ${p.online ? "on" : ""}"></span>${esc(p.name)}${p.banned ? ` <span class="tag danger">Banned</span>` : p.timedOut ? ` <span class="tag danger">Timed out</span>` : ""}</span>
+          <span class="num gold" style="text-align:right">${dd(p.total)}</span>
+          <span class="acts">
+            ${p.table ? `<button data-act="kick" data-id="${esc(p.id)}" data-name="${esc(p.name)}">Kick</button>` : ""}
+            ${p.banned ? "" : `<button class="danger" data-act="ban" data-id="${esc(p.id)}" data-name="${esc(p.name)}">Ban</button>`}
+          </span>
+        </div>`).join("")
+      : `<div class="empty">Nobody has picked a name yet.</div>`;
+
+    $("feed").innerHTML = ai.recent.length
+      ? ai.recent.map((d) => `
+        <div class="row feed">
+          <span class="ellipsis">${esc(d.bot)} <span class="muted">· ${esc(d.table)}</span></span>
+          <span class="ellipsis">${esc(d.action)}</span>
+          <span class="num ${d.fallback ? "bad" : "muted"}" style="text-align:right">${d.fallback ? "script" : secs(d.ms)}</span>
+        </div>`).join("")
+      : `<div class="empty">No AI decisions yet. AI bots only ask Claude while a human is at their table.</div>`;
+
+    const h = live.history;
+    const perMinute = h.aiCalls.map((v, i) => (i === 0 ? 0 : Math.max(0, v - h.aiCalls[i - 1]) * 6));
+    $("charts").innerHTML = [
+      ["Players online", h.online, `${t.online}`, "#ffb81c"],
+      ["AI decisions / min", perMinute.slice(1), `${perMinute.at(-1) ?? 0}`, "#ffb81c"],
+      ["House bank", h.house, dd(t.house), "#8a8a8a"],
+    ].map(([label, values, now, color]) => `
+      <div class="chart"><div class="chart-head"><span class="label">${label}</span><span class="num">${esc(now)}</span></div>${sparkline(values, color)}</div>`).join("");
+  }
+
+  // Kick / Ban go to Claude as actions; Claude confirms before doing anything.
+  document.addEventListener("click", (e) => {
+    const button = e.target.closest("button[data-act]");
+    if (!button) return;
+    It.action(button.dataset.act, { playerId: button.dataset.id, name: button.dataset.name });
+    $("updated").textContent = `Asked Claude to ${button.dataset.act} ${button.dataset.name}…`;
+  });
+
+  // "Updated Ns ago", and a red warning once the bridge has gone quiet.
+  setInterval(() => {
+    if (!lastAt) return;
+    const ago = Math.round((Date.now() - lastAt) / 1000);
+    const el = $("updated");
+    if (el.textContent.startsWith("Asked Claude") && ago < 4) return;
+    el.textContent = ago > 30 ? `No update for ${ago}s — is npm run it:live running?` : `Live · updated ${ago}s ago`;
+    el.classList.toggle("stale", ago > 30);
+  }, 1000);
+
+  It.onState(render);
+</script>
+</body>
+</html>

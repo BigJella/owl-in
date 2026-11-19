@@ -3,7 +3,9 @@ import {
   describeAction,
   formatDD,
   BOT_BUY_IN_BB,
-  BOT_FILL_TARGET,
+  DEFAULT_MAX_AI,
+  DEFAULT_MAX_BOTS,
+  STAGE_LABEL,
   BOT_MAX_STACK_BB,
   HIGH_ROLLER_MIN_BIG_BLIND,
   MAX_BUY_IN_BB,
@@ -11,7 +13,10 @@ import {
   POKER_MAX_SEATS,
   TIME_BANK_MAX_MS,
   TIME_BANK_REFILL_MS,
+  type AdminSeat,
+  type AdminTable,
   type BotMode,
+  type TableSettings,
   type HandActionEntry,
   type PokerRoomSummary,
   type SessionEndReason,
@@ -19,6 +24,7 @@ import {
   type PokerTableView,
   type TableStage,
 } from "@owl-in/shared";
+import { LEFT_REASON, Moderation, joinBlockMessage } from "../admin/Moderation";
 import { LlmStrategy, type CompleteFn, type LlmDecisionLog } from "../ai/LlmStrategy";
 import { RuleBasedStrategy } from "../ai/RuleBasedStrategy";
 import type { HouseBank } from "../economy/HouseBank";
@@ -93,12 +99,15 @@ export interface PokerRoomOptions {
   /** Asked when the room has no humans at a hand boundary. */
   canClose?: (room: PokerRoom) => boolean;
   onClose?: (room: PokerRoom) => void;
-  /** LLM bots: how many of the table's bots start in LLM mode, and the model call (null = unavailable). */
+  /** LLM bots: the model call (null = unavailable) and the decision log. */
   llm?: LlmBotOptions;
+  /** Max bots / max AI bots (defaults 4 / 2). */
+  settings?: Partial<TableSettings>;
+  /** Bans and timeouts, shared by every table (a private one if omitted, e.g. in tests). */
+  moderation?: Moderation;
 }
 
 export interface LlmBotOptions {
-  botsPerTable: number;
   complete: CompleteFn | null;
   log?: (entry: LlmDecisionLog) => void;
 }
@@ -119,7 +128,22 @@ interface Occupant {
   rebuyDeadline: number | null;
   /** Asked to cash out mid-hand: plays it out, then is removed when the hand ends. Irreversible. */
   cashingOut: boolean;
+  /** Set when an admin kicked them mid-hand: the timeout and reason to apply once the hand ends. */
+  kick: { penaltyMs: number; reason: string } | null;
 }
+
+const occupant = (player: Player): Occupant => ({
+  player,
+  timeBankMs: 0,
+  leaving: false,
+  disconnectedAt: null,
+  dropTimer: null,
+  ready: true,
+  drainSince: null,
+  rebuyDeadline: null,
+  cashingOut: false,
+  kick: null,
+});
 
 interface Turn {
   id: number;
@@ -153,8 +177,10 @@ export class PokerRoom {
   private lastHandStartedAt = -Infinity;
   /** Set between hands at tables with humans: when un-ready players' clocks start running. */
   private readyGraceEndsAt: number | null = null;
-  /** playerId -> time they may rejoin this table. */
-  private readonly penalties = new Map<string, number>();
+  private readonly moderation: Moderation;
+  readonly settings: TableSettings;
+  /** An admin closed the table: it closes when the current hand ends. */
+  closing = false;
   private readonly bank: HouseBank;
   /** playerId -> open career session at this table. */
   private readonly sessionIds = new Map<string, string>();
@@ -166,6 +192,9 @@ export class PokerRoom {
     this.name = options.name;
     this.bank = options.bank;
     this.timing = { ...DEFAULT_TIMING, ...options.timing };
+    this.moderation = options.moderation ?? new Moderation();
+    const maxBots = options.settings?.maxBots ?? DEFAULT_MAX_BOTS;
+    this.settings = { maxBots, maxAi: Math.min(maxBots, options.settings?.maxAi ?? DEFAULT_MAX_AI) };
     this.table = new PokerTable({
       smallBlind: Math.floor(options.bigBlind / 2),
       bigBlind: options.bigBlind,
@@ -187,7 +216,7 @@ export class PokerRoom {
 
   /** Queue a human to be dealt in at the next hand. Returns an error message or null. */
   join(player: HumanPlayer, buyIn: number): string | null {
-    if (this.closed) return "That table just closed.";
+    if (this.closed || this.closing) return "That table is closing.";
     const existing = this.seatOf(player);
     if (existing !== null) {
       if (this.occupants[existing]!.cashingOut) return "You're cashing out at the end of this hand.";
@@ -201,11 +230,8 @@ export class PokerRoom {
       return null;
     }
     if (this.waiting.some((w) => w.player === player)) return null;
-    const blockedUntil = this.penalties.get(player.id) ?? 0;
-    if (blockedUntil > Date.now()) {
-      const minutes = Math.ceil((blockedUntil - Date.now()) / 60_000);
-      return `You left this table recently. You can rejoin it in ${minutes} min.`;
-    }
+    const block = this.moderation.joinBlock(this.id, player.id);
+    if (block) return joinBlockMessage(block);
     const min = this.bigBlind * MIN_BUY_IN_BB;
     const max = this.bigBlind * MAX_BUY_IN_BB;
     if (!Number.isInteger(buyIn) || buyIn < min || buyIn > max) return `Buy-in must be between ${formatDD(min)} and ${formatDD(max)}.`;
@@ -229,11 +255,12 @@ export class PokerRoom {
    * Cash out. Between hands (or if you weren't dealt in) you leave immediately; mid-hand the
    * cash-out is queued: you play the hand out and are removed when it ends. Irreversible either way.
    */
-  leave(player: HumanPlayer): string | null {
+  leave(player: HumanPlayer, kick: { penaltyMs: number; reason: string } | null = null): string | null {
     const seat = this.seatOf(player);
     if (seat !== null && !this.canLeave(seat)) {
       const occ = this.occupants[seat]!;
       occ.cashingOut = true;
+      if (kick) occ.kick = kick;
       this.broadcast([]);
       this.changed();
       return null;
@@ -241,14 +268,16 @@ export class PokerRoom {
 
     const queued = this.waiting.findIndex((w) => w.player === player);
     if (queued >= 0) {
-      // Never sat down: just a refund, no penalty.
+      // Never sat down: just a refund, no penalty (unless an admin kicked them with a timeout).
       player.bankroll += this.waiting[queued]!.buyIn;
-      this.closeSession(player, this.waiting[queued]!.buyIn, "left");
+      this.closeSession(player, this.waiting[queued]!.buyIn, kick ? "removed" : "left");
       this.waiting.splice(queued, 1);
+      if (kick) this.penalize(player, kick.penaltyMs, kick.reason);
     }
     if (seat !== null) {
-      this.removeOccupant(seat);
-      this.penalize(player);
+      this.removeOccupant(seat, kick ? "removed" : "left");
+      if (kick) this.penalize(player, kick.penaltyMs, kick.reason);
+      else this.penalize(player);
     }
     if (player.roomId === this.id) player.roomId = null;
     if (this.table.phase === "idle") this.scheduleNextHand();
@@ -310,8 +339,8 @@ export class PokerRoom {
     return this.table.phase === "idle" || !this.table.seats[seat]!.inHand;
   }
 
-  private penalize(player: Player) {
-    this.penalties.set(player.id, Date.now() + this.timing.rejoinPenaltyMs);
+  private penalize(player: Player, ms = this.timing.rejoinPenaltyMs, reason = LEFT_REASON) {
+    this.moderation.setTableTimeout(this.id, this.name, player.id, ms, reason);
   }
 
   onDisconnect(player: HumanPlayer) {
@@ -481,11 +510,16 @@ export class PokerRoom {
     if (events.some((e) => e.type === "handEnded")) this.recordHand(this.handLog);
     if (this.table.phase === "idle") {
       const animationMs = animationAllowanceMs(events);
-      if (this.occupants.some((o) => o?.cashingOut)) {
+      if (this.occupants.some((o) => o?.cashingOut) || this.closing) {
         // Players cashing out still get this hand's result (showdown, payouts) before they're removed.
         this.broadcast(events);
         events = [];
         this.removeCashedOut();
+      }
+      if (this.closing) {
+        this.close();
+        this.changed();
+        return;
       }
       this.scheduleNextHand(animationMs);
     } else this.startTurn(events);
@@ -615,8 +649,10 @@ export class PokerRoom {
   private removeCashedOut() {
     this.occupants.forEach((occ, seat) => {
       if (!occ?.cashingOut || !(occ.player instanceof HumanPlayer)) return;
-      this.penalize(occ.player);
-      this.removeOccupant(seat);
+      const kick = occ.kick;
+      this.removeOccupant(seat, kick ? "removed" : "left");
+      if (kick) this.penalize(occ.player, kick.penaltyMs, kick.reason);
+      else this.penalize(occ.player);
     });
   }
 
@@ -659,11 +695,11 @@ export class PokerRoom {
       if (seat === undefined) break; // table full of humans; keep waiting
       this.waiting.shift();
       this.table.seatPlayer(seat, player.id, buyIn);
-      this.occupants[seat] = { player, timeBankMs: 0, leaving: false, disconnectedAt: null, dropTimer: null, ready: true, drainSince: null, rebuyDeadline: null, cashingOut: false };
+      this.occupants[seat] = occupant(player);
       if (!player.connected) this.onDisconnect(player);
     }
 
-    const target = Math.max(0, BOT_FILL_TARGET - this.humanCount());
+    const target = Math.max(0, this.settings.maxBots - this.humanCount());
     let bots = this.botSeats();
     while (bots.length > target) {
       this.removeOccupant(bots.pop()!);
@@ -673,25 +709,36 @@ export class PokerRoom {
       const names = this.occupants.flatMap((o) => (o ? [o.player.name] : []));
       const bot = this.createBot(pickBotName(names));
       this.table.seatPlayer(seat, bot.id, this.bank.withdraw(botStack));
-      this.occupants[seat] = { player: bot, timeBankMs: 0, leaving: false, disconnectedAt: null, dropTimer: null, ready: true, drainSince: null, rebuyDeadline: null, cashingOut: false };
+      this.occupants[seat] = occupant(bot);
       bots = this.botSeats();
     }
-    this.topUpLlmBots();
+    this.balanceAi();
+  }
+
+  private bots(): BotPlayer[] {
+    return this.occupants.flatMap((o) => (o?.player instanceof BotPlayer ? [o.player] : []));
   }
 
   /**
-   * Keep `llm.botsPerTable` of the table's bots in LLM mode. A joining human replaces the
-   * closest-stack bot, which may be an LLM bot, so a script bot takes over its role.
+   * Keep `settings.maxAi` of the table's bots in LLM mode by switching bots that follow the table
+   * (no admin override). A joining human may replace an LLM bot, so another bot takes over its role.
    */
-  private topUpLlmBots() {
-    const target = this.options.llm?.botsPerTable ?? 0;
-    const bots = this.occupants.flatMap((o) => (o?.player instanceof BotPlayer ? [o.player] : []));
+  private balanceAi() {
+    const bots = this.bots();
+    const target = Math.min(this.settings.maxAi ?? 0, bots.length);
     let llmBots = bots.filter((b) => b.mode === "llm").length;
     for (const bot of bots) {
       if (llmBots >= target) break;
-      if (bot.mode === "script") {
+      if (bot.override === null && bot.mode === "script") {
         bot.mode = "llm";
         llmBots += 1;
+      }
+    }
+    for (const bot of [...bots].reverse()) {
+      if (llmBots <= target) break;
+      if (bot.override === null && bot.mode === "llm") {
+        bot.mode = "script";
+        llmBots -= 1;
       }
     }
   }
@@ -699,19 +746,100 @@ export class PokerRoom {
   private createBot(name: string): BotPlayer {
     const script = new RuleBasedStrategy();
     const llm = this.options.llm;
-    // Starts as script; topUpLlmBots() promotes bots to LLM up to the table's target.
+    // Starts as script; balanceAi() switches bots to LLM up to the table's AI count.
     return new BotPlayer(`bot-${++botCounter}`, name, script, new LlmStrategy(script, llm?.complete ?? null, llm?.log));
   }
 
-  /** Switch one bot between script and LLM (admin). Takes effect from its next decision. */
-  setBotMode(botId: string, mode: BotMode): boolean {
-    const occ = this.occupants.find((o) => o?.player.id === botId);
-    if (!occ || !(occ.player instanceof BotPlayer)) return false;
-    if (occ.player.mode !== mode) {
-      occ.player.mode = mode;
-      this.broadcast([]);
-    }
+  // ---------- admin ----------
+
+  /**
+   * Pin one bot to script or LLM (admin override), or hand it back to the table's AI count with null.
+   * Takes effect from its next decision.
+   */
+  setBotOverride(botId: string, mode: BotMode | null): boolean {
+    const bot = this.bots().find((b) => b.id === botId);
+    if (!bot) return false;
+    bot.override = mode;
+    if (mode) bot.mode = mode;
+    this.balanceAi();
+    this.refresh();
     return true;
+  }
+
+  /** Change max bots / max AI. The AI count applies at once; the bot count at the next gap. */
+  updateSettings(settings: Partial<TableSettings>) {
+    if (settings.maxBots !== undefined) this.settings.maxBots = settings.maxBots;
+    if (settings.maxAi !== undefined) this.settings.maxAi = settings.maxAi;
+    this.settings.maxAi = Math.min(this.settings.maxAi ?? 0, this.settings.maxBots);
+    this.balanceAi();
+    this.refresh();
+  }
+
+  /** Admin kick: same as cashing out (queued mid-hand), with the given timeout (0 = none). */
+  kick(player: HumanPlayer, penaltyMs: number, message = "An admin removed you from the table."): boolean {
+    if (this.seatOf(player) === null && !this.waiting.some((w) => w.player === player)) return false;
+    player.sendError(message);
+    this.leave(player, { penaltyMs, reason: "Removed by an admin" });
+    player.sendSession();
+    return true;
+  }
+
+  /** Admin close: at once between hands, otherwise when the current hand ends. Everyone is cashed out. */
+  requestClose() {
+    if (this.closed) return;
+    this.closing = true;
+    if (this.table.phase === "idle") this.close();
+    else this.refresh();
+  }
+
+  /** Push a fresh view to everyone (after an admin change). */
+  refresh() {
+    this.broadcast([]);
+    this.changed();
+  }
+
+  /** Everything the admin panel shows about this table. No hole cards. */
+  admin(): AdminTable {
+    const t = this.table;
+    const handLive = t.phase !== "idle";
+    const seats = this.occupants.flatMap((occ, seat): AdminSeat[] => {
+      if (!occ) return [];
+      const s = t.seats[seat]!;
+      const bot = occ.player instanceof BotPlayer ? occ.player : null;
+      return [
+        {
+          seat,
+          playerId: occ.player.id,
+          name: occ.player.name,
+          kind: occ.player.kind,
+          stack: s.stack,
+          bet: s.bet,
+          status: !handLive || !s.inHand ? "waiting" : s.folded ? "folded" : s.allIn ? "allIn" : "active",
+          aiCapable: bot !== null,
+          botMode: bot?.mode ?? null,
+          botOverride: bot?.override ?? null,
+          connected: occ.disconnectedAt === null,
+          lastAction: s.inHand ? (this.lastActions[seat] ?? null) : null,
+        },
+      ];
+    });
+    return {
+      id: this.id,
+      game: "poker",
+      name: this.name,
+      stakes: `${formatDD(t.smallBlind)}/${formatDD(this.bigBlind)}`,
+      stage: STAGE_LABEL[this.stage()],
+      handId: t.handId,
+      closing: this.closing,
+      humans: this.humanCount(),
+      bots: this.botSeats().length,
+      aiBots: this.bots().filter((b) => b.mode === "llm").length,
+      waiting: this.waiting.length,
+      chips: t.totalChips() + this.waiting.reduce((sum, w) => sum + w.buyIn, 0),
+      pot: t.pots.reduce((sum, p) => sum + p.amount, 0) + t.seats.reduce((sum, s) => sum + (s?.bet ?? 0), 0),
+      settings: { ...this.settings },
+      seats,
+    };
   }
 
   private removeOccupant(seat: number, reason: SessionEndReason = "left") {
@@ -739,7 +867,11 @@ export class PokerRoom {
     if (this.turn) for (const timer of this.turn.timers) clearTimeout(timer);
     this.turn = null;
     this.closed = true;
+    if (this.closing) {
+      for (const player of this.audience()) player.sendError("This table was closed by an admin.");
+    }
     if (this.table.phase === "idle") this.occupants.forEach((_, seat) => this.removeOccupant(seat, "table closed"));
+    this.moderation.dropRoom(this.id);
     for (const { player, buyIn } of this.waiting) {
       this.closeSession(player, buyIn, "table closed");
       player.bankroll += buyIn;

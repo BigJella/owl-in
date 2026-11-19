@@ -10,7 +10,10 @@ import {
   BJ_DECISION_REFILL_MS,
   BJ_TIME_BANK_MAX_MS,
   BJ_TURN_REFILL_MS,
+  BJ_STAGE_LABEL,
   formatDD,
+  type AdminSeat,
+  type AdminTable,
   type BlackjackRoomSummary,
   type BlackjackRoundRecord,
   type SessionEndReason,
@@ -18,6 +21,7 @@ import {
   type BlackjackStage,
   type BlackjackTableView,
 } from "@owl-in/shared";
+import { Moderation, joinBlockMessage } from "../admin/Moderation";
 import { BasicStrategy } from "../ai/BasicStrategy";
 import type { HouseBank } from "../economy/HouseBank";
 import { BlackjackBot } from "../players/BlackjackBot";
@@ -85,6 +89,10 @@ export interface BlackjackRoomOptions {
   onChange?: (room: BlackjackRoom) => void;
   canClose?: (room: BlackjackRoom) => boolean;
   onClose?: (room: BlackjackRoom) => void;
+  /** Bot spots to fill (0–3, default 3; bots only ever sit in spots 1–3). */
+  maxBots?: number;
+  /** Bans and timeouts, shared by every table (a private one if omitted, e.g. in tests). */
+  moderation?: Moderation;
 }
 
 interface Member {
@@ -162,6 +170,11 @@ export class BlackjackRoom {
   private readonly bank: HouseBank;
   /** playerId -> open career session at this table. */
   private readonly sessionIds = new Map<string, string>();
+  private readonly moderation: Moderation;
+  /** How many of spots 1–3 bots fill (admin setting). */
+  maxBots: number;
+  /** An admin closed the table: it closes when the current round ends. */
+  closing = false;
 
   constructor(private readonly options: BlackjackRoomOptions) {
     this.id = options.id;
@@ -171,6 +184,8 @@ export class BlackjackRoom {
     this.bank = options.bank;
     this.timing = { ...DEFAULT_BJ_TIMING, ...options.timing };
     this.table = options.table ?? new BlackjackTable({ decks: BJ_DECKS, penetration: BJ_PENETRATION });
+    this.moderation = options.moderation ?? new Moderation();
+    this.maxBots = Math.max(0, Math.min(BJ_BOT_SPOTS, options.maxBots ?? BJ_BOT_SPOTS));
   }
 
   start() {
@@ -181,8 +196,12 @@ export class BlackjackRoom {
   // ---------- membership ----------
 
   join(player: HumanPlayer): string | null {
-    if (this.closed) return "That table just closed.";
+    if (this.closed || this.closing) return "That table is closing.";
     const existing = this.members.get(player.id);
+    if (!existing) {
+      const block = this.moderation.joinBlock(this.id, player.id);
+      if (block) return joinBlockMessage(block);
+    }
     player.roomId = this.id;
     player.game = "blackjack";
     if (existing) {
@@ -377,6 +396,7 @@ export class BlackjackRoom {
   private scheduleRound(events: BlackjackEvent[]): void {
     if (this.closed) return;
     this.clearTimer();
+    if (this.closing) return this.close();
     if (this.members.size === 0 && this.table.roundId > 0 && this.options.canClose?.(this)) return this.close();
     if (this.hasHumans()) return this.openBetting(events);
     const delay = Math.max(this.timing.gapMs, this.lastRoundStartedAt + this.timing.botOnlyRoundIntervalMs - Date.now());
@@ -711,12 +731,21 @@ export class BlackjackRoom {
 
   // ---------- seats ----------
 
-  /** Bots sit in free spots among the first three. */
+  /** Bots sit in free spots among the first three, up to `maxBots` of them. */
   private fillBots() {
-    for (let spot = 0; spot < BJ_BOT_SPOTS; spot += 1) {
+    let bots = this.owners.filter((o) => o instanceof BlackjackBot).length;
+    for (let spot = 0; spot < BJ_BOT_SPOTS && bots < this.maxBots; spot += 1) {
       if (this.owners[spot]) continue;
       const names = this.owners.flatMap((o) => (o ? [o.name] : []));
       this.owners[spot] = new BlackjackBot(`bjbot-${++botCounter}`, pickBotName(names), new BasicStrategy());
+      bots += 1;
+    }
+    // maxBots was lowered: the highest bot spots go first.
+    for (let spot = BJ_BOT_SPOTS - 1; spot >= 0 && bots > this.maxBots; spot -= 1) {
+      if (this.owners[spot] instanceof BlackjackBot) {
+        this.removeBot(spot);
+        bots -= 1;
+      }
     }
   }
 
@@ -756,14 +785,90 @@ export class BlackjackRoom {
     player.sendSession();
   }
 
+  // ---------- admin ----------
+
+  /** Change how many bot spots are filled (0–3). Applies when the next betting round opens. */
+  updateSettings(maxBots: number) {
+    this.maxBots = Math.max(0, Math.min(BJ_BOT_SPOTS, maxBots));
+    this.changed();
+  }
+
+  /** Admin kick: leave at once between rounds, after the round otherwise. Optional timeout from this table. */
+  kick(player: HumanPlayer, penaltyMs: number, message = "An admin removed you from the table."): boolean {
+    if (!this.members.has(player.id)) return false;
+    player.sendError(message);
+    this.leave(player);
+    if (penaltyMs > 0) this.moderation.setTableTimeout(this.id, this.name, player.id, penaltyMs, "Removed by an admin");
+    player.sendSession();
+    return true;
+  }
+
+  /** Admin close: at once between rounds, otherwise when the current round ends. Bets are refunded. */
+  requestClose() {
+    if (this.closed) return;
+    this.closing = true;
+    if (this.table.canBet) this.close();
+    else this.changed();
+  }
+
+  refresh() {
+    this.broadcast([]);
+    this.changed();
+  }
+
+  /** Everything the admin panel shows about this table. The dealer's hole card is never included. */
+  admin(): AdminTable {
+    const t = this.table;
+    const seats = this.owners.flatMap((owner, spot): AdminSeat[] => {
+      if (!owner) return [];
+      const s = t.spots[spot]!;
+      const member = owner instanceof HumanPlayer ? this.members.get(owner.id) : undefined;
+      return [
+        {
+          seat: spot,
+          playerId: owner.id,
+          name: owner.name,
+          kind: owner.kind,
+          stack: null,
+          bet: s.bet,
+          status: this.bettingOpen ? "betting" : s.hands.length > 0 ? "playing" : "waiting",
+          aiCapable: false,
+          botMode: null,
+          botOverride: null,
+          connected: member ? member.disconnectedAt === null : true,
+          lastAction: null,
+        },
+      ];
+    });
+    return {
+      id: this.id,
+      game: "blackjack",
+      name: this.name,
+      stakes: `${formatDD(this.minBet)}–${formatDD(this.maxBet)}`,
+      stage: BJ_STAGE_LABEL[this.stage()],
+      handId: t.roundId,
+      closing: this.closing,
+      humans: this.members.size,
+      bots: this.owners.filter((o) => o instanceof BlackjackBot).length,
+      aiBots: 0,
+      waiting: 0,
+      chips: this.moneyOnTable,
+      pot: 0,
+      settings: { maxBots: this.maxBots, maxAi: null },
+      seats,
+    };
+  }
+
   close() {
     if (this.closed) return;
     this.clearTimer();
+    if (this.closing) for (const member of this.members.values()) member.player.sendError("This table was closed by an admin.");
     if (this.turn) for (const timer of this.turn.timers) clearTimeout(timer);
     this.turn = null;
     if (this.table.canBet) this.owners.forEach((_, spot) => this.table.spots[spot]!.bet > 0 && this.refund(spot));
     for (const member of [...this.members.values()]) this.removeMember(member, true, "table closed");
     this.closed = true;
+    this.moderation.dropRoom(this.id);
     this.options.onClose?.(this);
   }
 

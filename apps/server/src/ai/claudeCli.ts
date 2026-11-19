@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import type { CompleteFn } from "./LlmStrategy";
+import type { CompleteFn, Completion } from "./LlmStrategy";
 
 /** The only shape the model may answer with (enforced by the CLI's structured output). */
 export const ACTION_SCHEMA = {
@@ -40,27 +40,28 @@ export function claudeArgs(model: string): string[] {
 }
 
 /**
- * Pull the action out of `claude -p --output-format json` stdout. Returns it as JSON text
- * (what `parseAction` reads). Throws on CLI errors.
+ * Pull the action out of `claude -p --output-format json` stdout: its JSON text (what `parseAction`
+ * reads) and the call's cost. Throws on CLI errors.
  */
-export function parseCliOutput(stdout: string): string {
-  const out = JSON.parse(stdout) as { is_error?: boolean; structured_output?: unknown; result?: unknown };
+export function parseCliOutput(stdout: string): Completion {
+  const out = JSON.parse(stdout) as { is_error?: boolean; structured_output?: unknown; result?: unknown; total_cost_usd?: unknown };
   if (out.is_error) throw new Error(`claude error: ${String(out.result ?? "unknown")}`);
-  if (out.structured_output && typeof out.structured_output === "object") return JSON.stringify(out.structured_output);
-  if (typeof out.result === "string") return out.result;
+  const costUsd = typeof out.total_cost_usd === "number" ? out.total_cost_usd : null;
+  if (out.structured_output && typeof out.structured_output === "object") return { text: JSON.stringify(out.structured_output), costUsd };
+  if (typeof out.result === "string") return { text: out.result, costUsd };
   throw new Error("claude returned no action");
 }
 
 /** A CompleteFn that runs the local Claude Code CLI headlessly, one process per decision. */
 export function createClaudeCliComplete(options: ClaudeCliOptions): CompleteFn {
   return (prompt, signal) =>
-    new Promise<string>((resolve, reject) => {
+    new Promise<Completion>((resolve, reject) => {
       if (signal.aborted) return reject(new Error("aborted"));
       const child = spawn(options.bin, claudeArgs(options.model), { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
       let stdout = "";
       let stderr = "";
       let settled = false;
-      const finish = (error: Error | null, value?: string) => {
+      const finish = (error: Error | null, value?: Completion) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);

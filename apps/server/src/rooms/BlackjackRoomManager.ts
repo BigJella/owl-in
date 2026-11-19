@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { BlackjackRoomSummary } from "@owl-in/shared";
+import type { Moderation } from "../admin/Moderation";
 import type { HouseBank } from "../economy/HouseBank";
 import type { StatsStore } from "../stats/StatsStore";
 import type { HumanPlayer } from "../players/HumanPlayer";
@@ -11,6 +12,7 @@ export interface BlackjackRoomManagerOptions {
   /** Career stats store shared by every room. */
   stats?: StatsStore;
   timing?: Partial<BlackjackTiming>;
+  moderation?: Moderation;
   /** Called (batched per tick) whenever the room list changes. */
   onRoomsChanged?: (rooms: BlackjackRoomSummary[]) => void;
 }
@@ -27,8 +29,10 @@ export class BlackjackRoomManager {
     this.create("High Limit", 100);
   }
 
-  create(name: string, minBet: number): BlackjackRoom {
+  create(name: string, minBet: number, maxBots?: number): BlackjackRoom {
     const room = new BlackjackRoom({
+      ...(maxBots !== undefined ? { maxBots } : {}),
+      ...(this.options.moderation ? { moderation: this.options.moderation } : {}),
       id: `bj-${randomUUID().slice(0, 8)}`,
       name,
       minBet,
@@ -63,6 +67,11 @@ export class BlackjackRoomManager {
     let count = 0;
     for (const room of this.rooms.values()) count += room.humanCount();
     return count;
+  }
+
+  /** Tables still taking players (not closing). */
+  openCount(): number {
+    return [...this.rooms.values()].filter((room) => !room.closing).length;
   }
 
   shutdown() {

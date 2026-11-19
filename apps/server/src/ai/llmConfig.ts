@@ -1,26 +1,36 @@
-import { BOT_FILL_TARGET } from "@owl-in/shared";
+import { DEFAULT_MAX_AI, DEFAULT_MAX_BOTS, POKER_MAX_SEATS } from "@owl-in/shared";
 
 export interface LlmConfig {
-  /** How many of each table's bots are seated in LLM mode (0 = all script). */
-  botsPerTable: number;
+  /** Bots per new poker table (admins can change it per table). */
+  defaultMaxBots: number;
+  /** How many of those bots are LLM bots on a new table (admins can change it per table). */
+  defaultMaxAi: number;
   model: string;
   timeoutMs: number;
   bin: string;
 }
 
+const count = (raw: string | undefined, fallback: number, max: number) => {
+  const text = (raw ?? "").trim().toLowerCase();
+  if (text === "all") return max;
+  const n = Number(text);
+  return text !== "" && Number.isFinite(n) ? Math.max(0, Math.min(max, Math.floor(n))) : fallback;
+};
+
 /**
- * Read from env:
- * - OWL_LLM_BOTS: 0..4 or "all" (default 0)
+ * Read from env (all optional):
+ * - OWL_DEFAULT_BOTS: bots per new poker table, 0..8 (default 4)
+ * - OWL_LLM_BOTS: how many of them are LLM bots, a number or "all" (default 2)
  * - OWL_LLM_MODEL (default claude-haiku-5-5)
  * - OWL_LLM_TIMEOUT_MS (default 15000)
  * - OWL_CLAUDE_BIN (default "claude")
  */
 export function readLlmConfig(env: NodeJS.ProcessEnv = process.env): LlmConfig {
-  const raw = (env.OWL_LLM_BOTS ?? "0").trim().toLowerCase();
-  const count = raw === "all" ? BOT_FILL_TARGET : Number(raw);
+  const defaultMaxBots = count(env.OWL_DEFAULT_BOTS, DEFAULT_MAX_BOTS, POKER_MAX_SEATS);
   const timeout = Number(env.OWL_LLM_TIMEOUT_MS ?? 15_000);
   return {
-    botsPerTable: Number.isFinite(count) ? Math.max(0, Math.min(BOT_FILL_TARGET, Math.floor(count))) : 0,
+    defaultMaxBots,
+    defaultMaxAi: count(env.OWL_LLM_BOTS, Math.min(DEFAULT_MAX_AI, defaultMaxBots), defaultMaxBots),
     model: env.OWL_LLM_MODEL?.trim() || "claude-haiku-5-5",
     timeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : 15_000,
     bin: env.OWL_CLAUDE_BIN?.trim() || "claude",

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { CURRENCY_NAME, formatDD, type LobbyState, type Session } from "@owl-in/shared";
-import { resetToken, saveCareerPublic, saveName, savedCareerPublic, savedName, socket } from "./networking/socket";
+import { bannedInfo, resetToken, saveCareerPublic, saveName, savedCareerPublic, savedName, socket } from "./networking/socket";
 import { pokerStore } from "./networking/pokerStore";
 import { blackjackStore } from "./networking/blackjackStore";
 import { NamePage } from "./pages/NamePage";
@@ -37,6 +37,10 @@ export default function App() {
   const leftBlackjackNotice = "You've left the table.";
   const sessionRef = useRef<Session | null>(null);
   sessionRef.current = session;
+  /** An admin banned this browser (reason may be null). */
+  const [banned, setBanned] = useState<{ reason: string | null } | null>(bannedInfo);
+  /** The last admin message (kick, timeout, table closed): replaces the usual "you've left" notice once. */
+  const adminMessage = useRef<string | null>(null);
 
   /** The server checks the token, the name (valid, not another browser's) and the privacy choice every time. */
   function identify(name: string, careerPublic: boolean | null) {
@@ -47,6 +51,7 @@ export default function App() {
         identified.current = false;
         setSession(null);
         if (result.code === "token") return resetToken(); // reconnects, which runs this check again
+        if (result.code === "banned") return setBanned({ reason: null });
         setNameLocked(result.code === "careerPublic");
         setNameError(result.code === "careerPublic" ? null : result.error);
         return;
@@ -65,12 +70,24 @@ export default function App() {
     // (and its running animation) never unmounts in between.
     const handleSession = (next: Session) => {
       if (!identified.current) return;
+      if (next.name !== sessionRef.current?.name) saveName(next.name); // an admin renamed us: log in as the new name
       const prevRoom = sessionRef.current?.roomId ?? null;
       if (prevRoom && !next.roomId && pokerStore.latest()?.message.view.leaveMode === "queued") setShowingResult(true);
       setSession(next);
     };
     socket.on("session", handleSession);
     socket.on("lobby-updated", setLobby);
+    const handleBanned = (info: { reason: string | null }) => {
+      identified.current = false;
+      setSession(null);
+      setBanned(info);
+    };
+    if (bannedInfo) handleBanned(bannedInfo); // arrived before this effect ran
+    const handleError = (message: string) => {
+      if (/admin|timed out/i.test(message)) adminMessage.current = message;
+    };
+    socket.on("banned", handleBanned);
+    socket.on("error-message", handleError);
     // Verify with the server on every (re)connect: the token reclaims any seat; a taken name or a missing privacy
     // choice brings up the name page in the right mode.
     const onConnect = () => {
@@ -83,6 +100,8 @@ export default function App() {
     return () => {
       socket.off("session", handleSession);
       socket.off("lobby-updated", setLobby);
+      socket.off("banned", handleBanned);
+      socket.off("error-message", handleError);
       socket.off("connect", onConnect);
     };
   }, []);
@@ -98,13 +117,15 @@ export default function App() {
     } else if (lastRoomId && lastGame === "blackjack") {
       blackjackStore.reset();
       setScreen("blackjack");
-      setNotice(leftBlackjackNotice);
+      setNotice(adminMessage.current ?? leftBlackjackNotice);
+      adminMessage.current = null;
     } else if (lastRoomId) {
       if (pokerStore.latest()?.message.view.leaveMode === "queued") {
         setShowingResult(true); // stay to watch the last hand; they'll click back to the lobby
       } else {
         pokerStore.reset();
-        setNotice(leftNotice);
+        setNotice(adminMessage.current ?? leftNotice);
+        adminMessage.current = null;
       }
     }
     setLastRoomId(roomId);
@@ -165,7 +186,17 @@ export default function App() {
   }
 
   let page;
-  if (!session) {
+  if (banned) {
+    page = (
+      <section className="lobby name-screen">
+        <div className="name-card">
+          <p className="eyebrow">KSU CARD CLUB</p>
+          <h1>You've been banned.</h1>
+          <p className="muted">{banned.reason ? `Reason: ${banned.reason}` : "An admin removed you from OWL IN."}</p>
+        </div>
+      </section>
+    );
+  } else if (!session) {
     page = (
       <NamePage
         key={nameLocked ? "privacy-only" : "name"}

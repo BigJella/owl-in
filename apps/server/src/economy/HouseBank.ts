@@ -3,7 +3,12 @@
  * number of chips in the system (bankrolls + bank + tables) never changes.
  */
 export class HouseBank {
-  constructor(public balance = 10_000_000) {}
+  /** What the house started with (for the conservation check). */
+  readonly initial: number;
+
+  constructor(public balance = 10_000_000) {
+    this.initial = balance;
+  }
 
   withdraw(amount: number): number {
     this.balance -= amount;

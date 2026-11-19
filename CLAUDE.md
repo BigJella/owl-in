@@ -91,12 +91,15 @@ TypeScript monorepo with npm workspaces. Node 26, npm 12, Windows (bash + PowerS
 | `npm run build` | Vite production build of the client (a >500 kB chunk warning from PixiJS is expected) |
 | `node scripts/bots.mjs [url] [hands] [clients]` | End-to-end smoke test: N socket clients play real hands; checks bot replacement, no hole-card leaks, rebuys |
 | `node scripts/blackjack-bots.mjs [url] [rounds] [clients]` | Blackjack e2e smoke: clients bet (one takes a bot's spot) and play random legal actions; checks bots only in spots 1–3, ≤3 spots each, no dealer hole-card leak |
-| `OWL_LLM_BOTS=2 npm run dev` | Same, with 2 of each table's bots driven by Claude (see **LLM bots** below); overrides `.env` for one run |
+| `OWL_LLM_BOTS=0 npm run dev` | Same, with no AI bots on new tables (see **LLM bots** below); env vars override `.env` for one run |
+| `npm run it:live` | itcan.do bridge: feeds the `owl-live` It page from the management API every 2s (see **Management API**) |
 | `node scripts/generate-placeholder-cards.mjs` | Regenerates placeholder card/chip SVGs into `apps/client/public/assets` |
 
 - **Server settings live in `apps/server/.env`** (git-ignored; copy `apps/server/.env.example`). The server's `dev` / `start`
-  scripts load it with `--env-file-if-exists`; real environment variables win. Long term, machine settings (CLI path,
-  timeout) stay in `.env` and game settings (LLM bots per table, per-bot mode) move to the database, edited from the admin panel.
+  scripts load it with `--env-file-if-exists`; real environment variables win. `.env` only holds machine settings and the
+  *defaults* for new tables; each table's bot / AI counts are changed live from the admin panel. Long term, game settings
+  move to the database (with persistence).
+- **Admin panel:** `http://localhost:5173/admin.html`, on the server's computer only (see **Management API**).
 - Server runs TypeScript directly via `tsx` (no build step). Workspace packages export raw `.ts` (`"exports": "./src/index.ts"`).
 - LAN play: open `http://<pc-ip>:5173`. The client connects to `http://<same-host>:3000` (override with `VITE_SERVER_URL`).
   Windows Firewall may prompt for Node.
@@ -122,6 +125,8 @@ apps/
     src/networking/pokerStore.ts, blackjackStore.ts  The two stores built from it
     src/components/ClockBlock.tsx  ClockBlock + useNow, shared by both table pages
     src/components/ChipChart.tsx   Career chips-over-time chart (SVG, hover/keyboard tooltip)
+    src/admin/                Admin panel (second Vite entry, admin.html): AdminApp (Overview / Tables / Players / Timeouts /
+                              AI log tabs, dialogs), api.ts (fetch wrapper with X-Owl-Admin), admin.css
     src/pages/                NamePage (name + Public/Private career), HomePage, PokerLobbyPage (sortable/filterable room list, buy-in/create dialogs),
                               CareerPage (stats panels, table history with expandable hands), LeaderboardPage,
                               BlackjackLobbyPage, BlackjackTablePage (strip; sidebar BetPanel / insurance / PlayPanel),
@@ -141,8 +146,12 @@ apps/
     src/index.ts              Wires registry, house bank, room manager, socket handlers
     src/networking/handlers/connectionHandler.ts  All socket events, zod-validated
     src/players/              Player (abstract) → HumanPlayer, BotPlayer; PlayerRegistry (token → human)
+    src/admin/                Management API: AdminService (every admin operation + the snapshot), adminRoutes (/api/admin/*,
+                              zod), security (loopback + local-origin + X-Owl-Admin guard), Moderation (bans, sitewide and
+                              per-table timeouts, incl. the poker rejoin lockout)
     src/ai/                   PokerStrategy interface, RuleBasedStrategy (deterministic), LlmStrategy (prompt + parse + fallback),
-                              claudeCli (headless `claude -p` CompleteFn), llmConfig (OWL_LLM_* env vars);
+                              claudeCli (headless `claude -p` CompleteFn + cost), llmConfig (OWL_* env vars), LlmTelemetry
+                              (last 500 decisions, latency, cost);
                               BlackjackStrategy interface, BasicStrategy (6-deck S17 DAS LS chart)
     src/rooms/PokerRoom.ts    The table loop: turns, clocks, ready-up, bot seating/pacing, cash-outs, penalties, views
     src/rooms/RoomManager.ts  Create/list rooms, keeps ≥2 open, batches room-list pushes
@@ -162,9 +171,11 @@ packages/
   shared/                     Types + constants used by client and server
     src/poker.ts              Views (PokerTableView, PokerSeatView, PokerRoomSummary), constants, formatDD, describeAction, STAGE_LABEL
     src/blackjack.ts          BlackjackTableView/SpotView/RoomSummary, BJ_* constants and labels
+    src/admin.ts              Management API types (AdminSnapshot, AdminTable/Seat/Player/Timeout, LlmStats, TableSettings)
     src/career.ts             PokerStats, BlackjackStats, TableSession, hand records, CareerView, LeaderboardRow
     src/events.ts             ClientToServerEvents / ServerToClientEvents (Socket.IO generics on both ends)
-scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generate-placeholder-cards.mjs
+scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), it-live.mjs (itcan.do bridge), generate-placeholder-cards.mjs
+it/owl-live/index.html        The itcan.do live page (tables, totals, leaderboard, AI feed, charts), fed by it-live.mjs
 ```
 
 ---
@@ -182,10 +193,13 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
 - **Player abstraction.** On every turn the room calls `player.requestAction(view, abortSignal)` and races it against the clock.
   Humans resolve the promise from a socket message; bots resolve it from their strategy. Bots are asked **at turn start**
   and the answer is applied once their "thinking" pause is over (so an LLM call overlaps the pause).
-- **One bot class, two modes.** `BotPlayer` holds a `script` (RuleBasedStrategy) and an `llm` (LlmStrategy) strategy and a
-  mutable `mode: "script" | "llm"` (`BotMode` in shared). The mode is read per decision, so `PokerRoom.setBotMode` /
-  `RoomManager.setBotMode(botId, mode)` (the hook for the future admin panel) switch a seated bot without re-seating it.
-  `PokerSeatView.botMode` shows it to clients.
+- **One bot class, two modes.** `BotPlayer` holds a `script` (RuleBasedStrategy) and an `llm` (LlmStrategy) strategy, a
+  mutable `mode: "script" | "llm"` (`BotMode` in shared) and an admin `override: BotMode | null`. The mode is read per
+  decision. `PokerRoom.balanceAi()` keeps `settings.maxAi` bots in LLM mode by switching only bots with no override;
+  `setBotOverride(botId, mode | null)` pins one (null hands it back). `PokerSeatView.botMode` shows the mode to clients.
+- **Management API = one service, two front ends.** `AdminService` holds every admin operation; `/api/admin/*` exposes it.
+  The admin panel and the itcan.do bridge (and Claude, via curl) all use the same API. Rooms expose `admin()` (an
+  `AdminTable` without hidden cards), `kick`, `requestClose`, `updateSettings`, `refresh`.
 - **Hand action log.** `PokerTableView.handActions` lists every public betting action of the hand (blinds included, by street).
   Everyone gets the same log; it's what the LLM reads as "the action so far".
 - **One Pixi app.** Creating and destroying a Pixi Application per page visit froze browsers (leaked WebGL contexts, plus a
@@ -198,7 +212,9 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
 ## Game rules (agreed with the user, keep these)
 
 **Seating & bots**
-- 8 seats max. Bots fill each table up to **4** players (`bots = max(0, 4 − humans)`).
+- 8 seats max. Bots fill each poker table up to its **max bots** (default **4**): `bots = max(0, maxBots − humans)`.
+  Max bots and **max AI** (default **2**) are per-table settings, editable live from the admin panel; new tables use
+  `OWL_DEFAULT_BOTS` / `OWL_LLM_BOTS`. A max-AI change applies at once; a max-bots change at the next gap.
 - Bots buy in for **60 BB** from the HouseBank. A bot below 1 BB is re-stacked between hands.
 - **Bot stack cap:** at tables with **no humans** (seated or waiting), bot stacks above **200 BB** go back to the house
   between hands. The cap never applies while any human is present, so nobody's totals change under them.
@@ -208,7 +224,8 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
 - Bot-only rooms play **1 hand per minute**.
 
 **LLM bots (agreed with the user, keep these)**
-- Two bot types in one class: **script** (deterministic rule-based) and **LLM** (Claude). Switchable per bot (admin panel later).
+- Two bot types in one class: **script** (deterministic rule-based) and **LLM** (Claude). Each table keeps **max AI** of
+  its bots in LLM mode; the admin panel can also **pin** a single bot to Script or AI (override), or set it back to Auto.
 - An LLM decision runs the local **Claude Code CLI headlessly**, one process per decision: `claude -p --model <model>
   --output-format json --json-schema <action schema> --tools "" --strict-mcp-config --setting-sources "" --no-session-persistence`.
   The prompt goes on stdin; the action comes back in `structured_output` (`{type, to?}`). ~2–6s with Haiku, ~$0.0006 per call.
@@ -216,11 +233,29 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
   and `handActions`. **No long-term memory and no reasoning text** (token cost); both are possible later.
 - Any failure (CLI missing, timeout, bad JSON) falls back to the script for that decision; `legalize()` clamps every answer.
   The server logs one `[llm]` line per decision (latency, fallback reason).
-- **Env vars:** `OWL_LLM_BOTS` = how many of each table's bots are seated in LLM mode (`0`–`4` or `all`, **default 0**),
-  `OWL_LLM_MODEL` (default `claude-haiku-5-5`), `OWL_LLM_TIMEOUT_MS` (15000), `OWL_CLAUDE_BIN` (`claude`).
-- The count is kept at every gap: when a human replaces an LLM bot (closest-stack rule), a script bot is switched to LLM.
+- **Env vars** (defaults for new tables): `OWL_DEFAULT_BOTS` (0–8, default 4), `OWL_LLM_BOTS` (number or `all`,
+  **default 2**), `OWL_LLM_MODEL` (default `claude-haiku-5-5`), `OWL_LLM_TIMEOUT_MS` (15000), `OWL_CLAUDE_BIN` (`claude`).
+- The AI count is kept at every gap: when a human replaces an LLM bot (closest-stack rule), an auto bot is switched to LLM.
+  Pinned bots are never switched, and a pin counts toward the table's AI count (a pin to AI can push an auto bot to script).
 - **LLM bots play by script at tables with no humans** (seated or waiting), so bot-only rooms spend no tokens.
 - UI: LLM bots' seat plates carry a gold **AI** tag (script bots: grey **BOT**); the strip's "To act" cell shows a small AI tag.
+
+**Admin & moderation (agreed with the user, keep these)**
+- **Admin panel** at `localhost:5173/admin.html`, **this computer only**. Separate from the player site (no socket, no identity).
+  Tabs: Overview (money with a conservation check, people, AI stats), Tables (create; per-table max bots / max AI; close;
+  per-bot Auto / Script / AI), Players (kick, timeout, bankroll, rename, ban/unban), Timeouts, AI log. Polls `/snapshot` every 1s.
+- **Kick:** like a cash-out (queued mid-hand / mid-round), with an optional per-table timeout (0 = none).
+- **Ban** is by browser token (the identity): removed from their table, disconnected, refused at connect and at `identify`
+  (`code: "banned"`); the client shows a plain "You've been banned" screen. Unban lifts it. Clearing site data dodges it
+  (accepted).
+- **Timeouts:** per-table (the 30-min poker rejoin lockout lives here too, reason "Left the table") and **sitewide** (can
+  browse, can't sit anywhere; ends by itself). Admins view, edit, remove and add them; adding one removes the player from
+  that table / every table. Blackjack still has **no automatic** lockout, only admin-added ones.
+- **Bankroll adjust** moves money to/from the HouseBank (conserved), never below $0. **Rename** works while seated, frees the old
+  name, and the client saves the new name from its session.
+- **Close table:** at once between hands, else after the current hand / round; everyone cashed out. At least 2 tables of each
+  game stay open (closing the last 2 is refused).
+- Blackjack tables have a **max bots** setting (0–3, spots 1–3 only) and no AI count yet (`maxAi: null`).
 
 **Money**
 - Every name gets **$10,000 Dining Dollars**, held in server memory only (a restart resets everything).
@@ -356,7 +391,7 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
 - [x] Shared fixed-grid table strip (identical for all players, no shifting); sidebar with static info top / controls bottom;
       clock + "+20s next turn" preview between turns
 - [x] Git repo on `main` (history: initial commit → UI rework → UI improvements → sidebar → table/sidebar polish)
-- [x] Tests: 108 Vitest tests (poker + blackjack engines, rooms with fake timers incl. soaks); `scripts/bots.mjs` and
+- [x] Tests: 127 Vitest tests (poker + blackjack engines, rooms with fake timers incl. soaks); `scripts/bots.mjs` and
       `scripts/blackjack-bots.mjs` e2e
 - [x] Blackjack: engine (shoe, S17, 3:2, double/split/insurance/late surrender), BlackjackRoom (spots, bot fill 1–3,
       betting window, insurance, clock), lobby + table page + Pixi renderer (shoe/tray levels, deal/flip/payout/sweep/shuffle
@@ -364,12 +399,13 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
 
 **Not done / known gaps**
 - [ ] Real card and chip art (placeholders are SVGs; swap the files and keep the names, change `CARD_EXT` for PNGs)
-- [x] LLM bots: headless Claude Code CLI per decision, script/LLM mode per bot, `OWL_LLM_BOTS`, AI tag, script fallback
+- [x] LLM bots: headless Claude Code CLI per decision, script/LLM mode per bot, per-table max AI, AI tag, script fallback
+- [x] Management API (`/api/admin`, localhost only) + admin panel (players, tables, totals, bans, timeouts, bot overrides,
+      AI log) + itcan.do live page and bridge (`npm run it:live`)
 - [x] Career page (rates, totals, vs players/bots, table history with every hand) and leaderboard (by Dining Dollars),
       public/private careers
 - [ ] Persistence (bankrolls, penalties, rooms and career stats are in memory; a server restart wipes them)
-- [ ] `npm audit` reports high-severity advisories (not investigated)
-- [ ] Admin dashboard (deliberately skipped so far)
+- [x] `npm audit`: 0 vulnerabilities after the dependency refresh (Nov 2026)
 
 ---
 
@@ -385,16 +421,17 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
    (implement `StatsStore`). The career page and leaderboard already exist, in memory.
 4. **Content & polish.** Real card art, sounds, chat/emotes, hand history panel, spectator mode.
 5. **Blackjack: done.** Possible follow-ups: LLM blackjack bots (`BlackjackStrategy`), a card-counting bot that spreads its bets.
-6. **Ops.** Admin dashboard (rooms, players, house bank), production build served by Express, deploy notes.
+6. **Ops.** Done: admin panel + management API + itcan.do live view. Next: production build served by Express, deploy notes.
 
 ---
 
 ## Next steps (add new items here)
 
-- [ ] Admin panel: switch individual bots between script and LLM (call `RoomManager.setBotMode`; no socket event exists yet)
 - [ ] LLM bots: optional one-line reasoning / table talk (costs tokens), long-term opponent memory, personalities
-- [ ] Admin panel vs `OWL_LLM_BOTS`: the room tops LLM bots back up to the per-table target at every gap, so switching a bot
-      to script by hand would be undone. Make the admin panel set the per-table target (or exempt hand-set bots)
+- [ ] LLM blackjack bots (`BlackjackStrategy` + a per-table max AI; the admin panel already shows "n/a" for it)
+- [ ] Admin panel has no login: it relies on "this computer only". Add a password if the server ever runs on a shared machine
+- [ ] Flaky test: `BlackjackRoom.test.ts` "queues a mid-round leave" fails ~1 in 20 runs when the dealer peeks a blackjack
+      (the round ends at once). Rig the shoe in that test
 - [ ] Replace placeholder card SVGs with real art
 - [ ] Implement `StatsStore` (and bankroll storage) on SQLite so careers survive restarts
 - [ ] Names are reserved for the whole server run: someone who loses their browser data can't reclaim their name until
@@ -403,6 +440,42 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
 - [ ] Blackjack: the canvas is small at phone width (sidebar controls are the primary UI there); consider a phone-specific layout
 - [ ] Blackjack: 3:2 is verified by tests. If it looks wrong in play, check for insured blackjacks (even money) or 21 after a split (pays 1:1)
 - [ ] Blackjack: insurance and split flows are covered by engine/room tests but were not screenshot-checked in a browser
+
+---
+
+## Management API (localhost only)
+
+The game server exposes `/api/admin/*` (`apps/server/src/admin/`). **Only requests from this computer** are served
+(loopback check, never `X-Forwarded-For`); a browser request must come from a local origin; **every write needs the
+header `X-Owl-Admin: 1`**. Responses never contain browser tokens, IPs or hidden cards (keep it that way).
+
+| Method & path | Does |
+|---|---|
+| `GET /snapshot` | Everything: totals (with `conserved`), tables + seats, players, timeouts, LLM stats |
+| `GET /tables`, `/tables/:id`, `/players`, `/timeouts`, `/llm?limit=` | Parts of the snapshot (`/llm` has up to 500 decisions) |
+| `POST /tables` | `{game, name, bigBlind \| minBet, maxBots?, maxAi?}` |
+| `PATCH /tables/:id` | `{maxBots?, maxAi?}` |
+| `POST /tables/:id/close` | Close after the current hand / round |
+| `POST /bots/:id/mode` | `{mode: "auto" \| "script" \| "llm"}` (poker bots) |
+| `POST /players/:id/kick` | `{timeoutMinutes?}` |
+| `POST /players/:id/ban` · `/unban` | `{reason?}` |
+| `POST /players/:id/bankroll` | `{delta}` (whole Dining Dollars, ±) |
+| `POST /players/:id/rename` | `{name}` |
+| `PUT /timeouts` · `DELETE /timeouts` | `{playerId, scope: "table" \| "site", roomId?, minutes, reason?}` (delete: no minutes) |
+
+Examples (Git Bash): `curl -s localhost:3000/api/admin/snapshot`, and
+`curl -s -X POST localhost:3000/api/admin/players/<id>/kick -H "Content-Type: application/json" -H "X-Owl-Admin: 1" -d '{"timeoutMinutes":10}'`.
+
+**itcan.do (It):** `it/owl-live/index.html` is a live page (tables, totals, leaderboard, AI feed, 15-min charts).
+- Claude publishes it from a conversation (`it read owl-live` first; `it create "OWL IN Live" --id owl-live --dir it/owl-live --open`,
+  or `it open owl-live` to take over an existing one) so clicks and typed questions reach that conversation.
+- `npm run it:live [apiBase]` (scripts/it-live.mjs) polls `/snapshot` every 2s and runs `it patch owl-live --file …` with
+  `{live: {...}}`, only when something changed (plus a 15s heartbeat). It publishes the page itself if it's missing.
+- State keys: `live` (the bridge's), `reply` (a line of text from Claude, shown at the top). Kick / Ban buttons send
+  `It.action("kick" | "ban", {playerId, name})`: **confirm with the user before acting** (an action alone isn't approval),
+  then call the API with curl. Questions typed in It's box come as `it:message`: query the API and answer with `it say`,
+  `it set owl-live reply "…"`, or a new It page for a chart.
+- It state lives on It's service and is shown on TVs/phones: never put tokens, IPs or hole cards in it.
 
 ---
 
@@ -430,3 +503,7 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
   No remote is configured, so nothing gets pushed. End commit messages with the Co-Authored-By line.
 - **Keep this file current.** Update the rules, checklist and next steps here whenever behaviour or design changes.
 - `npm install` warns that esbuild's install script was blocked. Harmless: Vite and tsx work.
+- **If the repo folder is moved or renamed, run `npm install`**: the workspace links in `node_modules/@owl-in` are absolute
+  junctions and keep pointing at the old path (every `@owl-in/*` import then fails to resolve).
+- Puppeteer: set a fake player's localStorage from `/admin.html` (same origin, opens no game socket). Setting it on the
+  player page races that page's own socket, which can sign in under the old token and take the name.

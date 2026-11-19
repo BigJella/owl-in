@@ -17,14 +17,15 @@ function human(name = `llmh${++humanCounter}`) {
 
 const TIMING: Partial<RoomTiming> = { botDelayMs: [2_000, 2_000], botOnlyDelayMs: 2_000, streetPauseMs: 0, botSafetyMs: 5_000 };
 
-function room(complete: CompleteFn | null, botsPerTable = 4, log?: (d: LlmDecisionLog) => void) {
+function room(complete: CompleteFn | null, maxAi = 4, log?: (d: LlmDecisionLog) => void) {
   const r = new PokerRoom({
     id: "llm",
     name: "LLM test",
     bigBlind: 10,
     bank: new HouseBank(),
     timing: TIMING,
-    llm: { botsPerTable, complete, ...(log ? { log } : {}) },
+    settings: { maxBots: 4, maxAi },
+    llm: { complete, ...(log ? { log } : {}) },
   });
   r.start();
   return r;
@@ -50,13 +51,13 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
 describe("LLM bots", () => {
-  it("seats OWL_LLM_BOTS bots in LLM mode and the rest as script", () => {
+  it("seats max AI bots in LLM mode and the rest as script", () => {
     const r = room(null, 2);
     expect(modes(r).sort()).toEqual(["llm", "llm", "script", "script"]);
     r.close();
   });
 
-  it("keeps OWL_LLM_BOTS LLM bots when a human replaces one", async () => {
+  it("keeps max AI LLM bots when a human replaces one", async () => {
     const r = room(null, 2);
     r.join(human(), 600); // every bot has 600: the first (an LLM bot) is replaced
     await vi.advanceTimersByTimeAsync(r.timing.gapMs);
@@ -138,13 +139,32 @@ describe("LLM bots", () => {
     r.close();
   });
 
-  it("setBotMode switches a bot and shows it in the view", () => {
-    const r = room(null, 0);
-    const bot = r.viewFor(null).seats.find((s) => s?.kind === "bot")!;
-    expect(bot.botMode).toBe("script");
-    expect(r.setBotMode(bot.playerId, "llm")).toBe(true);
-    expect(r.viewFor(null).seats[bot.seat]!.botMode).toBe("llm");
-    expect(r.setBotMode("nobody", "llm")).toBe(false);
+  it("an override pins a bot; the table's AI count only moves the others", () => {
+    const r = room(null, 2);
+    const view = () => r.viewFor(null).seats.flatMap((s) => (s?.kind === "bot" ? [s] : []));
+    const script = view().find((s) => s.botMode === "script")!;
+    expect(r.setBotOverride(script.playerId, "llm")).toBe(true);
+    // Still 2 AI bots wanted: one auto LLM bot steps back so the override doesn't add a third.
+    expect(view().filter((s) => s.botMode === "llm")).toHaveLength(2);
+    expect(r.admin().seats.find((s) => s.playerId === script.playerId)).toMatchObject({ botMode: "llm", botOverride: "llm" });
+
+    r.updateSettings({ maxAi: 0 });
+    expect(view().filter((s) => s.botMode === "llm").map((s) => s.playerId)).toEqual([script.playerId]); // pinned
+    expect(r.setBotOverride(script.playerId, null)).toBe(true); // back to auto: follows maxAi 0
+    expect(view().every((s) => s.botMode === "script")).toBe(true);
+    expect(r.setBotOverride("nobody", "llm")).toBe(false);
+    r.close();
+  });
+
+  it("max AI changes apply at once, max bots at the next gap", async () => {
+    const r = room(null, 1);
+    r.updateSettings({ maxAi: 3 });
+    expect(modes(r).filter((m) => m === "llm")).toHaveLength(3);
+    r.updateSettings({ maxBots: 2 });
+    expect(modes(r)).toHaveLength(4); // nobody is unseated mid-way
+    expect(r.settings).toEqual({ maxBots: 2, maxAi: 2 }); // max AI never exceeds max bots
+    await vi.advanceTimersByTimeAsync(2 * 60_000);
+    expect(modes(r)).toHaveLength(2);
     r.close();
   });
 

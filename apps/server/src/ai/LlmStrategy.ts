@@ -1,16 +1,24 @@
 import type { HandActionEntry, PlayingCard, PokerAction, PokerTableView } from "@owl-in/shared";
 import { legalize, potSize, type PokerStrategy } from "./PokerStrategy";
 
+/** What a model call returns: its text, plus what it cost when the backend reports that. */
+export interface Completion {
+  text: string;
+  costUsd: number | null;
+}
+
 /** Any text-in/text-out model call. Must reject once `signal` aborts. */
-export type CompleteFn = (prompt: string, signal: AbortSignal) => Promise<string>;
+export type CompleteFn = (prompt: string, signal: AbortSignal) => Promise<Completion | string>;
 
 /** One LLM decision, for the server log. `fallback` is set when the script decided instead. */
 export interface LlmDecisionLog {
+  at: number;
   table: string;
   bot: string;
   handId: number;
   action: PokerAction;
   ms: number;
+  costUsd: number | null;
   fallback: string | null;
 }
 
@@ -35,12 +43,16 @@ export class LlmStrategy implements PokerStrategy {
     const started = Date.now();
     let action: PokerAction;
     let fallback: string | null = null;
+    let costUsd: number | null = null;
     if (!this.complete) {
       fallback = "unavailable";
       action = await this.fallback.decide(view, signal);
     } else {
       try {
-        action = legalize(view, parseAction(await this.complete(buildPrompt(view), signal)));
+        const reply = await this.complete(buildPrompt(view), signal);
+        const completion = typeof reply === "string" ? { text: reply, costUsd: null } : reply;
+        costUsd = completion.costUsd;
+        action = legalize(view, parseAction(completion.text));
       } catch (error) {
         if (signal.aborted) throw error; // the turn is over; nobody is waiting for an answer
         fallback = error instanceof Error ? error.message.slice(0, 80) : "error";
@@ -48,7 +60,7 @@ export class LlmStrategy implements PokerStrategy {
       }
     }
     const me = view.mySeat === null ? null : view.seats[view.mySeat];
-    this.log?.({ table: view.name, bot: me?.name ?? "?", handId: view.handId, action, ms: Date.now() - started, fallback });
+    this.log?.({ at: Date.now(), table: view.name, bot: me?.name ?? "?", handId: view.handId, action, ms: Date.now() - started, costUsd, fallback });
     return action;
   }
 }

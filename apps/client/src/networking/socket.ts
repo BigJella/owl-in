@@ -40,6 +40,15 @@ export const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io(SER
   auth: { token: sessionToken() },
 });
 
+/**
+ * Set once the server says this browser is banned. Caught here, as soon as the socket exists: at connect the server
+ * sends `banned` before React has mounted, so a listener added later would miss it.
+ */
+export let bannedInfo: { reason: string | null } | null = null;
+socket.on("banned", (info) => {
+  bannedInfo = info;
+});
+
 /** The server rejected our token: start a new browser identity and reconnect (identify runs again on connect). */
 export function resetToken() {
   socket.auth = { token: storage(TOKEN_KEY, freshToken())! };

@@ -10,7 +10,7 @@ import type { Ack, LobbyState, Session } from "./types";
 export interface ClientToServerEvents {
   /**
    * Log in (on every page load / reconnect) or pick a new name. The server checks the browser token, the name (valid and not
-   * another browser's) and the privacy choice; failures carry `code` "token" | "name" | "careerPublic". `careerPublic: null`
+   * another browser's) and the privacy choice; failures carry `code` "token" | "name" | "careerPublic" | "banned". `careerPublic: null`
    * means the browser has no saved choice yet.
    */
   identify: (request: { name: string; careerPublic: boolean | null }, ack: Ack<{ session: Session }>) => void;
@@ -58,4 +58,6 @@ export interface ServerToClientEvents {
   "blackjack:state": (message: BlackjackStateMessage) => void;
   "blackjack:left": () => void;
   "error-message": (message: string) => void;
+  /** An admin banned this browser's identity: the connection is closed right after. */
+  banned: (info: { reason: string | null }) => void;
 }

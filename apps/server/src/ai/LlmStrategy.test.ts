@@ -103,8 +103,11 @@ describe("claude CLI", () => {
   });
 
   it("parses the CLI's JSON output", () => {
-    expect(parseCliOutput('{"is_error":false,"result":"x","structured_output":{"type":"check"}}')).toBe('{"type":"check"}');
-    expect(parseCliOutput('{"is_error":false,"result":"{\\"type\\":\\"fold\\"}"}')).toBe('{"type":"fold"}');
+    expect(parseCliOutput('{"is_error":false,"result":"x","structured_output":{"type":"check"},"total_cost_usd":0.0006}')).toEqual({
+      text: '{"type":"check"}',
+      costUsd: 0.0006,
+    });
+    expect(parseCliOutput('{"is_error":false,"result":"{\\"type\\":\\"fold\\"}"}')).toEqual({ text: '{"type":"fold"}', costUsd: null });
     expect(() => parseCliOutput('{"is_error":true,"result":"rate limited"}')).toThrow("rate limited");
   });
 
@@ -115,14 +118,16 @@ describe("claude CLI", () => {
 });
 
 describe("readLlmConfig", () => {
-  it("defaults to no LLM bots and Haiku", () => {
-    expect(readLlmConfig({})).toEqual({ botsPerTable: 0, model: "claude-haiku-5-5", timeoutMs: 15_000, bin: "claude" });
+  it("defaults to 4 bots with 2 AI per table, and Haiku", () => {
+    expect(readLlmConfig({})).toEqual({ defaultMaxBots: 4, defaultMaxAi: 2, model: "claude-haiku-5-5", timeoutMs: 15_000, bin: "claude" });
   });
 
-  it("accepts a count or 'all', clamped to the bot fill target", () => {
-    expect(readLlmConfig({ OWL_LLM_BOTS: "2" }).botsPerTable).toBe(2);
-    expect(readLlmConfig({ OWL_LLM_BOTS: "all" }).botsPerTable).toBe(4);
-    expect(readLlmConfig({ OWL_LLM_BOTS: "9" }).botsPerTable).toBe(4);
-    expect(readLlmConfig({ OWL_LLM_BOTS: "x" }).botsPerTable).toBe(0);
+  it("accepts counts or 'all', clamped to the seats and the bot count", () => {
+    expect(readLlmConfig({ OWL_LLM_BOTS: "3" }).defaultMaxAi).toBe(3);
+    expect(readLlmConfig({ OWL_LLM_BOTS: "all" }).defaultMaxAi).toBe(4);
+    expect(readLlmConfig({ OWL_LLM_BOTS: "9" }).defaultMaxAi).toBe(4);
+    expect(readLlmConfig({ OWL_LLM_BOTS: "x" }).defaultMaxAi).toBe(2);
+    expect(readLlmConfig({ OWL_DEFAULT_BOTS: "6", OWL_LLM_BOTS: "all" })).toMatchObject({ defaultMaxBots: 6, defaultMaxAi: 6 });
+    expect(readLlmConfig({ OWL_DEFAULT_BOTS: "20" }).defaultMaxBots).toBe(8);
   });
 });
