@@ -20,6 +20,8 @@
   --ok: #3fa34d;
   --control-h: 52px;
   --nav-h: 64px;
+  /* Width of page content (headers, toolbars, lists, panels): everything lines up on the same right edge. */
+  --content-w: 1180px;
   --display: "Oswald", "Arial Narrow", "Inter", sans-serif;
 
   font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -159,7 +161,7 @@ h1, h2, h3, .display { font-family: var(--display); text-transform: uppercase; f
 .name-card .primary { margin-top: 6px; justify-content: space-between; }
 
 /* Home: game cards */
-.game-grid { display: grid; grid-template-columns: repeat(2, minmax(280px, 1fr)); gap: 20px; max-width: 1180px; }
+.game-grid { display: grid; grid-template-columns: repeat(2, minmax(280px, 1fr)); gap: 20px; max-width: var(--content-w); }
 .game-card { border: 1px solid var(--line); background: var(--surface); display: flex; flex-direction: column; transition: border-color .12s; }
 .game-card:hover { border-color: var(--gold); }
 .card-art { height: 230px; display: flex; align-items: center; justify-content: center; overflow: hidden; background: var(--black); border-bottom: 1px solid var(--line); }
@@ -186,8 +188,8 @@ h1, h2, h3, .display { font-family: var(--display); text-transform: uppercase; f
 .game-info button b { font-size: 20px; }
 
 /* ---------- Room list ---------- */
-.room-hero { display: flex; align-items: end; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-top: 18px; }
-.room-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; max-width: 1180px; margin: 0 0 10px; flex-wrap: wrap; }
+.room-hero { display: flex; align-items: end; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-top: 18px; max-width: var(--content-w); }
+.room-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; max-width: var(--content-w); margin: 0 0 10px; flex-wrap: wrap; }
 .checkbox { display: inline-flex; align-items: center; gap: 10px; font-size: 14px; cursor: pointer; user-select: none; }
 .checkbox input {
   appearance: none; width: 18px; height: 18px; margin: 0; border: 1px solid var(--muted); background: var(--black);
@@ -198,7 +200,7 @@ h1, h2, h3, .display { font-family: var(--display); text-transform: uppercase; f
 .sort-select { display: none; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
 .sort-select select { height: 38px; border: 1px solid var(--line); background: var(--black); padding: 0 10px; }
 
-.room-list { max-width: 1180px; border: 1px solid var(--line); background: var(--surface); }
+.room-list { max-width: var(--content-w); border: 1px solid var(--line); background: var(--surface); }
 .room-row {
   display: grid; grid-template-columns: 2fr 0.8fr 1fr 2.2fr 1.2fr 110px; align-items: center; gap: 12px;
   padding: 14px 20px; border-top: 1px solid var(--line);
@@ -381,7 +383,7 @@ input[type=range] { accent-color: var(--gold); width: 100%; }
     minmax(104px, 0.9fr)  /* dealer */
     minmax(220px, 1.9fr); /* to act / status */
 }
-.lobby-error { max-width: 1180px; margin: 0 0 10px; }
+.lobby-error { max-width: var(--content-w); margin: 0 0 10px; }
 
 .bet-panel { display: flex; flex-direction: column; gap: 8px; }
 .spot-picker { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
@@ -456,7 +458,7 @@ input[type=range] { accent-color: var(--gold); width: 100%; }
 .career-tags { display: flex; align-items: center; gap: 12px; }
 .career-tags .online { margin-top: 0; }
 .career-summary {
-  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); max-width: 1180px; margin-bottom: 20px;
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); max-width: var(--content-w); margin-bottom: 20px;
   border-top: 1px solid var(--gold); border-bottom: 1px solid var(--gold);
 }
 .career-summary > div { display: flex; flex-direction: column; gap: 2px; padding: 12px 18px; border-left: 1px solid var(--line); }
@@ -465,7 +467,7 @@ input[type=range] { accent-color: var(--gold); width: 100%; }
 .career-summary strong { font-family: var(--display); font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; }
 
 /* Chips-over-time chart: a panel like the game panels, full width, between the totals and the game stats. */
-.chip-chart { max-width: 1180px; margin-bottom: 20px; border: 1px solid var(--line); background: var(--surface); padding: 18px 20px 12px; }
+.chip-chart { max-width: var(--content-w); margin-bottom: 20px; border: 1px solid var(--line); background: var(--surface); padding: 18px 20px 12px; }
 .chip-chart-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }
 .chip-chart-head h2 { margin: 0; font-size: 22px; }
 .chip-chart-head p { margin: 4px 0 0; font-size: 13px; }
@@ -490,7 +492,7 @@ input[type=range] { accent-color: var(--gold); width: 100%; }
 .chip-tooltip b.gold { color: var(--gold); }
 .chip-tooltip b.loss { color: var(--danger); }
 
-.career-games { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; max-width: 1180px; }
+.career-games { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; max-width: var(--content-w); }
 .career-panel { border: 1px solid var(--line); background: var(--surface); padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .career-panel header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .career-panel h2 { margin: 0; font-size: 22px; }
@@ -516,7 +518,7 @@ input[type=range] { accent-color: var(--gold); width: 100%; }
 
 .section-title { font-size: 24px; margin: 32px 0 12px; }
 .table-scroll { overflow-x: auto; max-width: 100%; }
-.history-wrap { max-width: 1180px; border: 1px solid var(--line); background: var(--surface); }
+.history-wrap { max-width: var(--content-w); border: 1px solid var(--line); background: var(--surface); }
 .history-table, .hand-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .history-table th, .hand-table th {
   text-align: left; padding: 10px 12px; white-space: nowrap; background: var(--black);

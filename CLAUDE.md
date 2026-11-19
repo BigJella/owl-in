@@ -41,6 +41,8 @@ pick a name, and play Texas Hold'em and Blackjack against each other **and again
   you leave the table). Keep it minimal.
 - Buttons: `.primary` (solid gold, black text), `.secondary` (black, gray border → gold on hover), `.primary.danger`.
   Tags: `.tag` / `.tag.gold` / `.tag.danger` (square, outlined).
+- **One content width.** Page content (headers with their right-side button, toolbars, lists, panels) is capped at
+  `--content-w` (1180px) so everything shares one right edge on wide screens. Use the token, never a new max-width.
 - **Layout stability is a requirement.** The user notices and dislikes UI that shifts as values change. Use fixed
   widths/heights, `font-variant-numeric: tabular-nums`, and anchored regions so that changing numbers, names and controls
   coming and going never move other elements.
