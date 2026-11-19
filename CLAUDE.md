@@ -218,6 +218,7 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
   The server logs one `[llm]` line per decision (latency, fallback reason).
 - **Env vars:** `OWL_LLM_BOTS` = how many of each table's bots are seated in LLM mode (`0`–`4` or `all`, **default 0**),
   `OWL_LLM_MODEL` (default `claude-haiku-5-5`), `OWL_LLM_TIMEOUT_MS` (15000), `OWL_CLAUDE_BIN` (`claude`).
+- The count is kept at every gap: when a human replaces an LLM bot (closest-stack rule), a script bot is switched to LLM.
 - **LLM bots play by script at tables with no humans** (seated or waiting), so bot-only rooms spend no tokens.
 - UI: LLM bots' seat plates carry a gold **AI** tag (script bots: grey **BOT**); the strip's "To act" cell shows a small AI tag.
 
@@ -392,7 +393,8 @@ scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), generat
 
 - [ ] Admin panel: switch individual bots between script and LLM (call `RoomManager.setBotMode`; no socket event exists yet)
 - [ ] LLM bots: optional one-line reasoning / table talk (costs tokens), long-term opponent memory, personalities
-- [ ] LLM bots: a waiting human replaces the closest-stack bot, which may be an LLM bot; refills seat LLM bots again up to `OWL_LLM_BOTS`
+- [ ] Admin panel vs `OWL_LLM_BOTS`: the room tops LLM bots back up to the per-table target at every gap, so switching a bot
+      to script by hand would be undone. Make the admin panel set the per-table target (or exempt hand-set bots)
 - [ ] Replace placeholder card SVGs with real art
 - [ ] Implement `StatsStore` (and bankroll storage) on SQLite so careers survive restarts
 - [ ] Names are reserved for the whole server run: someone who loses their browser data can't reclaim their name until

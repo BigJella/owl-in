@@ -676,14 +676,31 @@ export class PokerRoom {
       this.occupants[seat] = { player: bot, timeBankMs: 0, leaving: false, disconnectedAt: null, dropTimer: null, ready: true, drainSince: null, rebuyDeadline: null, cashingOut: false };
       bots = this.botSeats();
     }
+    this.topUpLlmBots();
+  }
+
+  /**
+   * Keep `llm.botsPerTable` of the table's bots in LLM mode. A joining human replaces the
+   * closest-stack bot, which may be an LLM bot, so a script bot takes over its role.
+   */
+  private topUpLlmBots() {
+    const target = this.options.llm?.botsPerTable ?? 0;
+    const bots = this.occupants.flatMap((o) => (o?.player instanceof BotPlayer ? [o.player] : []));
+    let llmBots = bots.filter((b) => b.mode === "llm").length;
+    for (const bot of bots) {
+      if (llmBots >= target) break;
+      if (bot.mode === "script") {
+        bot.mode = "llm";
+        llmBots += 1;
+      }
+    }
   }
 
   private createBot(name: string): BotPlayer {
     const script = new RuleBasedStrategy();
     const llm = this.options.llm;
-    const llmBots = this.occupants.filter((o) => o?.player instanceof BotPlayer && o.player.mode === "llm").length;
-    const mode: BotMode = llm && llmBots < llm.botsPerTable ? "llm" : "script";
-    return new BotPlayer(`bot-${++botCounter}`, name, script, new LlmStrategy(script, llm?.complete ?? null, llm?.log), mode);
+    // Starts as script; topUpLlmBots() promotes bots to LLM up to the table's target.
+    return new BotPlayer(`bot-${++botCounter}`, name, script, new LlmStrategy(script, llm?.complete ?? null, llm?.log));
   }
 
   /** Switch one bot between script and LLM (admin). Takes effect from its next decision. */

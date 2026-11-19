@@ -56,6 +56,14 @@ describe("LLM bots", () => {
     r.close();
   });
 
+  it("keeps OWL_LLM_BOTS LLM bots when a human replaces one", async () => {
+    const r = room(null, 2);
+    r.join(human(), 600); // every bot has 600: the first (an LLM bot) is replaced
+    await vi.advanceTimersByTimeAsync(r.timing.gapMs);
+    expect(modes(r).filter((m) => m !== null).sort()).toEqual(["llm", "llm", "script"]);
+    r.close();
+  });
+
   it("never calls the model at a table with no humans", async () => {
     const complete = vi.fn<CompleteFn>(async () => '{"type":"call"}');
     const r = room(complete);
