@@ -92,7 +92,7 @@ TypeScript monorepo with npm workspaces. Node 26, npm 12, Windows (bash + PowerS
 | `node scripts/bots.mjs [url] [hands] [clients]` | End-to-end smoke test: N socket clients play real hands; checks bot replacement, no hole-card leaks, rebuys |
 | `node scripts/blackjack-bots.mjs [url] [rounds] [clients]` | Blackjack e2e smoke: clients bet (one takes a bot's spot) and play random legal actions; checks bots only in spots 1–3, ≤3 spots each, no dealer hole-card leak |
 | `OWL_LLM_BOTS=0 npm run dev` | Same, with no AI bots on new tables (see **LLM bots** below); env vars override `.env` for one run |
-| `npm run it:live` | itcan.do bridge: feeds the `owl-live` It page from the management API every 2s (see **Management API**) |
+| `npm run it:live` | itcan.do bridge: feeds the `owl-live` chat page's live data from the management API every 2s (see **Management API**) |
 | `node scripts/generate-placeholder-cards.mjs` | Regenerates placeholder card/chip SVGs into `apps/client/public/assets` |
 
 - **Server settings live in `apps/server/.env`** (git-ignored; copy `apps/server/.env.example`). The server's `dev` / `start`
@@ -175,7 +175,7 @@ packages/
     src/career.ts             PokerStats, BlackjackStats, TableSession, hand records, CareerView, LeaderboardRow
     src/events.ts             ClientToServerEvents / ServerToClientEvents (Socket.IO generics on both ends)
 scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), it-live.mjs (itcan.do bridge), generate-placeholder-cards.mjs
-it/owl-live/index.html        The itcan.do live page (tables, totals, leaderboard, AI feed, charts), fed by it-live.mjs
+it/owl-live/index.html        The itcan.do chat query page (live stats strip, chat, live chart specs), fed by it-live.mjs
 ```
 
 ---
@@ -401,7 +401,7 @@ it/owl-live/index.html        The itcan.do live page (tables, totals, leaderboar
 - [ ] Real card and chip art (placeholders are SVGs; swap the files and keep the names, change `CARD_EXT` for PNGs)
 - [x] LLM bots: headless Claude Code CLI per decision, script/LLM mode per bot, per-table max AI, AI tag, script fallback
 - [x] Management API (`/api/admin`, localhost only) + admin panel (players, tables, totals, bans, timeouts, bot overrides,
-      AI log) + itcan.do live page and bridge (`npm run it:live`)
+      AI log) + itcan.do chat query page with live charts and its bridge (`npm run it:live`)
 - [x] Career page (rates, totals, vs players/bots, table history with every hand) and leaderboard (by Dining Dollars),
       public/private careers
 - [ ] Persistence (bankrolls, penalties, rooms and career stats are in memory; a server restart wipes them)
@@ -467,15 +467,51 @@ header `X-Owl-Admin: 1`**. Responses never contain browser tokens, IPs or hidden
 Examples (Git Bash): `curl -s localhost:3000/api/admin/snapshot`, and
 `curl -s -X POST localhost:3000/api/admin/players/<id>/kick -H "Content-Type: application/json" -H "X-Owl-Admin: 1" -d '{"timeoutMinutes":10}'`.
 
-**itcan.do (It):** `it/owl-live/index.html` is a live page (tables, totals, leaderboard, AI feed, 15-min charts).
-- Claude publishes it from a conversation (`it read owl-live` first; `it create "OWL IN Live" --id owl-live --dir it/owl-live --open`,
-  or `it open owl-live` to take over an existing one) so clicks and typed questions reach that conversation.
-- `npm run it:live [apiBase]` (scripts/it-live.mjs) polls `/snapshot` every 2s and runs `it patch owl-live --file …` with
-  `{live: {...}}`, only when something changed (plus a 15s heartbeat). It publishes the page itself if it's missing.
-- State keys: `live` (the bridge's), `reply` (a line of text from Claude, shown at the top). Kick / Ban buttons send
-  `It.action("kick" | "ban", {playerId, name})`: **confirm with the user before acting** (an action alone isn't approval),
-  then call the API with curl. Questions typed in It's box come as `it:message`: query the API and answer with `it say`,
-  `it set owl-live reply "…"`, or a new It page for a chart.
+**itcan.do (It) = a chat query tool.** `it/owl-live/index.html` is a chat page: a small live stats strip on top, a
+scrollable chat, and an input at the bottom. The user asks questions; **the Claude Code session that owns the page
+answers** in the chat with text and **live charts** (chart specs the page redraws from fresh data every 2s). Answers
+only arrive while that session is open.
+- Publish from the conversation that will answer: `it read owl-live` (if `not_found`: `it create "OWL IN Live" --id owl-live
+  --dir it/owl-live --open`), or `it open owl-live` to take over the existing page. After editing the page: `it update owl-live
+  --dir it/owl-live`. **Taking over only works when Claude runs it inside a session**: `it open` from a plain terminal
+  just shows the page and leaves it unowned. A page the bridge (re)published is unowned too (It then says "Your agent gets
+  this when it next waits on this page"): questions queue until a session runs `it open owl-live`, then answer the queue
+  (`it actions`, `it ack <id>`).
+- `npm run it:live [apiBase] [pageId]` (scripts/it-live.mjs) pushes `state.live` every 2s (only when changed, plus a 15s
+  heartbeat). It never touches `state.chat`. `live` holds `totals`, `tables[]` (with `seats[]`, `maxBots`, `maxAi`),
+  `players[]` (all: `id, name, online, bankroll, atTable, total, net, table, game, banned, timedOut`), `timeouts[]`,
+  `ai` (`calls, fallbacks, fallbackRate, avgMs, p95Ms, costUsd, recent[]`, and from the last 500 decisions `byBot[]`,
+  `byAction[]`, `byTable[]` with `name, calls, avgMs, fallbacks, costUsd`) and `history` (one sample per 10s, 15 min:
+  `at, online, atTables, house, bankrolls, aiCalls, aiMs, aiCost`, plus keyed series `players.<playerId>` (total),
+  `tables.<tableId>` (chips) and `pots.<tableId>`).
+- **`state.chat`** (Claude's): an object keyed by message id, sorted on the page by `at` (ms), so **append with one
+  `it patch` and no read**. Items: `{role:"user", text, at, ref}` (echo of the question; `ref` clears the page's pending
+  bubble), `{role:"claude", text, at}`, `{role:"claude", chart:{…}, text?, at}`, `{role:"claude", status:"thinking", at}`.
+  Remove an item with `null`; clear the chat with `{"chat":null}`.
+- **Chart specs** (paths are into `state.live`; add `data` instead of a path for a one-off "Snapshot" chart that doesn't update):
+  - `{type:"line", title, series:[{label, path:"history.online"}, …], format}` (up to 4 series; x is `history.at`)
+  - `{type:"bar", title, source:"players" | "tables" | "ai.byBot" | …, label:"name", value:"total", sort:"desc", limit, where:{game:"poker"}, format}`
+    (negative values draw red from zero)
+  - `{type:"stat", title, path:"totals.house", history:"history.house", format}` (big number + change over the window)
+  - `{type:"table", title, source, columns:[{field, label, format}], sort, sortBy, limit, where}`
+  - `format`: `dd` (Dining Dollars), `int`, `ms`, `usd`, `pct`.
+- **Answering** (actions arrive as `[It] "OWL IN Live" (owl-live): ask` with `{text, ref}`; It's own box above the page
+  arrives as `it:message`):
+  1. At once, one patch: the user echo (with `ref`) plus `{role:"claude", status:"thinking"}`.
+  2. Query the API (`curl -s localhost:3000/api/admin/...`).
+  3. One patch: the answer item(s) plus the thinking item set to `null`.
+  Write patches to a temp JSON file and run `it patch owl-live --file <file>` (no shell-quoting problems on Windows).
+  Build that file with a small `.mjs` script written with the Write tool (`JSON.stringify` of the patch), not inline
+  `node -e '…'`: an apostrophe in the answer text ("he's") ends the shell's single-quoted string.
+  Use ids like `c<at>-q` / `c<at>-a` and `at` = `Date.now()`, answer items a millisecond later than the echo.
+  Example answer item: `{"role":"claude","at":…,"text":"Chips at every table, live:","chart":{"type":"bar","title":"Chips by
+  table","source":"tables","label":"name","value":"chips","sort":"desc","format":"dd"}}`.
+- **Career questions** (all-time chip history, poker vs blackjack): `GET /players/:id/career`, then post a chart with inline
+  `data` (a "Snapshot": careers aren't in `live`), e.g. `{type:"line", title, data:{x:[…hand numbers]}, series:[{label, values:[…totals]}], format:"dd"}`
+  or a `bar` with `data:[{name:"Poker", value:net}, {name:"Blackjack", value:net}]`. The player client keeps using the
+  `career:get` socket event; both call the same `careerView`.
+- **Moderation from the chat** ("kick Sam", "ban X", "clear" button → action `clear`): an action alone isn't approval.
+  Confirm in the Claude Code conversation (or ask on the page and wait for the user's yes) before calling a write endpoint.
 - It state lives on It's service and is shown on TVs/phones: never put tokens, IPs or hole cards in it.
 
 ---
