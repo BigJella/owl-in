@@ -390,7 +390,7 @@ it/owl-live/index.html        The itcan.do chat query page (live stats strip, ch
 - [x] Black & gold sharp/flat redesign site-wide; black felt
 - [x] Shared fixed-grid table strip (identical for all players, no shifting); sidebar with static info top / controls bottom;
       clock + "+20s next turn" preview between turns
-- [x] Git repo on `main` (history: initial commit → UI rework → UI improvements → sidebar → table/sidebar polish)
+- [x] Git repo on `main`, pushed to GitHub (`origin` → BigJella/owl-in)
 - [x] Tests: 127 Vitest tests (poker + blackjack engines, rooms with fake timers incl. soaks); `scripts/bots.mjs` and
       `scripts/blackjack-bots.mjs` e2e
 - [x] Blackjack: engine (shoe, S17, 3:2, double/split/insurance/late surrender), BlackjackRoom (spots, bot fill 1–3,
@@ -578,7 +578,8 @@ only arrive while that session is open.
   Check that nothing shifts while values change (strip cells, sidebar info, amount buttons).
 - **Git workflow:** the user asks for commits explicitly. Do feature work on a branch off `main`
   (e.g. `ui-rework`, `ui-improvements`), commit there, and merge into `main` (fast-forward) only when asked.
-  No remote is configured, so nothing gets pushed. End commit messages with the Co-Authored-By line.
+  The remote is GitHub (`origin` → `BigJella/owl-in`); push only when the user asks, and delete merged feature branches
+  (local and on `origin`) when asked. End commit messages with the Co-Authored-By line.
 - **Keep this file current.** Update the rules, checklist and next steps here whenever behaviour or design changes.
 - `npm install` warns that esbuild's install script was blocked. Harmless: Vite and tsx work.
 - **If the repo folder is moved or renamed, run `npm install`**: the workspace links in `node_modules/@owl-in` are absolute
