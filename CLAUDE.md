@@ -36,6 +36,9 @@ pick a name, and play Texas Hold'em and Blackjack against each other **and again
   The user found several thick gold lines stacked at the top of the page jarring.
 - **Type:** Oswald (condensed, uppercase, letter-spaced) for headings, labels, numbers and buttons; Inter for body text.
   Both are bundled via `@fontsource` (works offline on LAN). Pixi waits for Oswald to load before drawing.
+- **Nav while seated:** the links (and the logo) look disabled but stay clickable; a click shows a small one-line popover
+  centred under that link's text, nudged back on screen at the edges ("You must leave your current table first.", 12px, gold left rule, × to dismiss, gone after 4s or when
+  you leave the table). Keep it minimal.
 - Buttons: `.primary` (solid gold, black text), `.secondary` (black, gray border → gold on hover), `.primary.danger`.
   Tags: `.tag` / `.tag.gold` / `.tag.danger` (square, outlined).
 - **Layout stability is a requirement.** The user notices and dislikes UI that shifts as values change. Use fixed

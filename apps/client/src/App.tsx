@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { CURRENCY_NAME, formatDD, type LobbyState, type Session } from "@owl-in/shared";
 import { resetToken, saveCareerPublic, saveName, savedCareerPublic, savedName, socket } from "./networking/socket";
 import { pokerStore } from "./networking/pokerStore";
@@ -110,6 +110,35 @@ export default function App() {
     setLastGame(game);
   }, [session?.roomId, session?.game]);
 
+  /** Shown under the nav when you click it while seated: you have to leave the table first. */
+  /** Horizontal centre of the clicked link's text (the hint is centred under it), or null when hidden. */
+  const [navHint, setNavHint] = useState<number | null>(null);
+  const navHintRef = useRef<HTMLDivElement>(null);
+  // Centre under the link, but nudge it back on screen if it would hang off an edge (phones, the logo).
+  useLayoutEffect(() => {
+    const el = navHintRef.current;
+    if (navHint === null || !el) return;
+    const half = el.offsetWidth / 2;
+    el.style.left = `${Math.max(14 + half, Math.min(navHint, window.innerWidth - 14 - half))}px`;
+  }, [navHint]);
+  useEffect(() => {
+    if (navHint === null) return;
+    const id = window.setTimeout(() => setNavHint(null), 4000);
+    return () => window.clearTimeout(id);
+  }, [navHint]);
+  // Leaving the table clears it straight away.
+  useEffect(() => {
+    if (!session?.roomId) setNavHint(null);
+  }, [session?.roomId]);
+
+  /** Nav clicks: go there, or (while seated) explain why not. */
+  function navigate(go: () => void, anchor: HTMLElement) {
+    if (!session) return;
+    if (!session.roomId) return go();
+    const rect = anchor.getBoundingClientRect();
+    setNavHint(rect.left + rect.width / 2);
+  }
+
   /** null = your own career (your own id counts as yours too). */
   function openCareer(playerId: string | null) {
     setCareerId(playerId === session?.playerId ? null : playerId);
@@ -181,17 +210,33 @@ export default function App() {
   return (
     <main>
       <nav className="nav">
-        <button className="brand" onClick={() => session && !session.roomId && setScreen("home")}>
+        <button className="brand" onClick={(e) => navigate(() => setScreen("home"), e.currentTarget)}>
           <span className="owl-mark">O</span>
           <span>OWL IN</span>
         </button>
-        <div className="nav-links">
-          <button onClick={() => session && !session.roomId && setScreen("home")}>Games</button>
-          <button onClick={() => session && !session.roomId && setScreen("poker")}>Poker</button>
-          <button onClick={() => session && !session.roomId && setScreen("blackjack")}>Blackjack</button>
-          <button onClick={() => session && !session.roomId && openCareer(null)}>Career</button>
-          <button onClick={() => session && !session.roomId && setScreen("leaderboard")}>Leaderboard</button>
+        <div className={`nav-links ${session?.roomId ? "locked" : ""}`}>
+          {(
+            [
+              ["Games", () => setScreen("home")],
+              ["Poker", () => setScreen("poker")],
+              ["Blackjack", () => setScreen("blackjack")],
+              ["Career", () => openCareer(null)],
+              ["Leaderboard", () => setScreen("leaderboard")],
+            ] as const
+          ).map(([label, go]) => (
+            <button key={label} aria-disabled={Boolean(session?.roomId)} onClick={(e) => navigate(go, e.currentTarget)}>
+              {label}
+            </button>
+          ))}
         </div>
+        {navHint !== null && (
+          <div className="nav-hint" role="alert" ref={navHintRef} style={{ left: navHint }}>
+            <span>You must leave your current table first.</span>
+            <button onClick={() => setNavHint(null)} aria-label="Dismiss">
+              ×
+            </button>
+          </div>
+        )}
         {session && (
           <div className="chip-balance">
             <span>
