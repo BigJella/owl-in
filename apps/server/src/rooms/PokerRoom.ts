@@ -22,8 +22,10 @@ import {
   type SessionEndReason,
   type PokerSeatView,
   type PokerTableView,
+  type PokerHandLog,
   type TableStage,
 } from "@owl-in/shared";
+import { logPlayer, type EventLog } from "../admin/EventLog";
 import { LEFT_REASON, Moderation, joinBlockMessage } from "../admin/Moderation";
 import { LlmStrategy, type CompleteFn, type LlmDecisionLog } from "../ai/LlmStrategy";
 import { RuleBasedStrategy } from "../ai/RuleBasedStrategy";
@@ -105,6 +107,8 @@ export interface PokerRoomOptions {
   settings?: Partial<TableSettings>;
   /** Bans and timeouts, shared by every table (a private one if omitted, e.g. in tests). */
   moderation?: Moderation;
+  /** The admin panel's event log: every finished hand is added here. */
+  eventLog?: EventLog;
 }
 
 export interface LlmBotOptions {
@@ -898,12 +902,12 @@ export class PokerRoom {
     this.options.stats?.closeSession(sessionId, { cashOut, reason });
   }
 
-  /** A hand just ended: record it for every human who was dealt in. */
+  /** A hand just ended: log it for the admin panel, and record it for every human who was dealt in. */
   private recordHand(events: PokerEvent[]) {
     const stats = this.options.stats;
     const started = events.find((e) => e.type === "handStarted");
     const dealt = events.find((e) => e.type === "holeCardsDealt");
-    if (!stats || !started || !dealt) return;
+    if ((!stats && !this.options.eventLog) || !started || !dealt) return;
     const seats = dealt.seats.flatMap((seat) => {
       const occ = this.occupants[seat];
       const s = this.table.seats[seat];
@@ -911,7 +915,10 @@ export class PokerRoom {
     });
     const showdown = events.find((e) => e.type === "showdown");
     const pot = events.reduce((sum, e) => sum + (e.type === "potAwarded" ? e.amount : 0), 0);
-    for (const outcome of attributePokerHand(seats, events)) {
+    const outcomes = attributePokerHand(seats, events);
+    this.logHand(events, started, outcomes, pot);
+    if (!stats) return;
+    for (const outcome of outcomes) {
       const occ = this.occupants[outcome.seat];
       if (!(occ?.player instanceof HumanPlayer)) continue;
       const sessionId = this.sessionIds.get(occ.player.id);
@@ -949,6 +956,57 @@ export class PokerRoom {
         { reached: reveal !== undefined, won: reveal !== undefined && outcome.returned > 0 },
       );
     }
+  }
+
+  /** One entry per hand in the admin event log (no hidden cards: only what was shown at a showdown). */
+  private logHand(
+    events: PokerEvent[],
+    started: Extract<PokerEvent, { type: "handStarted" }>,
+    outcomes: ReturnType<typeof attributePokerHand>,
+    pot: number,
+  ) {
+    const log = this.options.eventLog;
+    if (!log) return;
+    const showdown = events.find((e) => e.type === "showdown");
+    const logSeats: PokerHandLog["seats"] = outcomes.flatMap((outcome) => {
+      const occ = this.occupants[outcome.seat];
+      const s = this.table.seats[outcome.seat];
+      if (!occ || !s) return [];
+      const reveal = showdown?.reveals.find((r) => r.seat === outcome.seat);
+      const acted = events.filter((e) => e.type === "playerActed" && e.seat === outcome.seat).at(-1);
+      return [
+        {
+          seat: outcome.seat,
+          player: logPlayer(occ.player, occ.player instanceof HumanPlayer),
+          position:
+            started.button === outcome.seat ? "D" : started.smallBlindSeat === outcome.seat ? "SB" : started.bigBlindSeat === outcome.seat ? "BB" : null,
+          wagered: s.contributed,
+          net: outcome.net,
+          result: outcome.result,
+          lastAction: acted?.type === "playerActed" ? describeAction(acted) : null,
+          showdownHand: reveal?.handName ?? null,
+          shown: reveal ? [...reveal.cards] : null,
+        },
+      ];
+    });
+    const winners = logSeats
+      .filter((s) => s.net > 0)
+      .map((s) => `${s.player.name} won ${formatDD(s.net)}${s.showdownHand ? ` (${s.showdownHand})` : ""}`);
+    log.add({
+      kind: "hand",
+      game: "poker",
+      table: { id: this.id, name: this.name },
+      summary: `Hand #${started.handId} · pot ${formatDD(pot)}${winners.length > 0 ? ` · ${winners.join(", ")}` : ""}`,
+      players: logSeats.map((s) => s.player),
+      hand: {
+        game: "poker",
+        handId: started.handId,
+        stakes: `${formatDD(this.table.smallBlind)}/${formatDD(this.bigBlind)}`,
+        board: [...this.table.community],
+        pot,
+        seats: logSeats,
+      },
+    });
   }
 
   /** Dining Dollars this player has at this table (stack, or a queued buy-in). */

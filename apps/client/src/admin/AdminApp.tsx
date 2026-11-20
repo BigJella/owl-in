@@ -11,18 +11,18 @@ import {
   type AdminTable,
   type AdminTimeout,
   type CareerView,
-  type LlmStats,
 } from "@owl-in/shared";
 import { CareerDetails } from "../pages/CareerPage";
 import { api, ApiError, isLocalPage } from "./api";
+import { Logging } from "./Logging";
 
-type Tab = "overview" | "tables" | "players" | "timeouts" | "ai";
+type Tab = "overview" | "tables" | "players" | "timeouts" | "log";
 const TABS: { id: Tab; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "tables", label: "Tables" },
   { id: "players", label: "Players" },
   { id: "timeouts", label: "Timeouts" },
-  { id: "ai", label: "AI log" },
+  { id: "log", label: "Logging" },
 ];
 
 /** Runs an admin action: shows the result as a toast and refreshes the snapshot. Resolves true on success. */
@@ -50,6 +50,8 @@ export function AdminApp() {
   const [locked, setLocked] = useState(!isLocalPage());
   const [toast, setToast] = useState<{ text: string; bad: boolean } | null>(null);
   const [dialog, setDialog] = useState<ReactNode>(null);
+  /** A player's career, opened from the Players tab or a name in the log (Back returns to that tab). */
+  const [career, setCareer] = useState<{ playerId: string; from: Tab } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const refresh = useCallback(async () => {
@@ -111,7 +113,15 @@ export function AdminApp() {
         </div>
         <nav className="adm-tabs" aria-label="Admin sections">
           {TABS.map((t) => (
-            <button key={t.id} className={tab === t.id ? "on" : ""} aria-current={tab === t.id ? "page" : undefined} onClick={() => setTab(t.id)}>
+            <button
+              key={t.id}
+              className={tab === t.id ? "on" : ""}
+              aria-current={tab === t.id ? "page" : undefined}
+              onClick={() => {
+                setCareer(null);
+                setTab(t.id);
+              }}
+            >
               {t.label}
               {t.id === "timeouts" && snapshot && snapshot.timeouts.length > 0 && <span className="adm-count">{snapshot.timeouts.length}</span>}
             </button>
@@ -126,16 +136,26 @@ export function AdminApp() {
         {offline && <p className="adm-banner">{offline} Showing the last data received; retrying every second.</p>}
         {!snapshot ? (
           <p className="muted">Loading…</p>
+        ) : career ? (
+          <CareerOf
+            s={snapshot}
+            playerId={career.playerId}
+            backLabel={TABS.find((t) => t.id === career.from)!.label}
+            onBack={() => setCareer(null)}
+            run={run}
+            open={open}
+            close={close}
+          />
         ) : tab === "overview" ? (
           <Overview s={snapshot} />
         ) : tab === "tables" ? (
           <Tables s={snapshot} run={run} open={open} close={close} />
         ) : tab === "players" ? (
-          <Players s={snapshot} run={run} open={open} close={close} />
+          <Players s={snapshot} run={run} open={open} close={close} onSelect={(playerId) => setCareer({ playerId, from: "players" })} />
         ) : tab === "timeouts" ? (
           <Timeouts s={snapshot} run={run} open={open} close={close} />
         ) : (
-          <AiLog />
+          <Logging s={snapshot} openCareer={(playerId) => setCareer({ playerId, from: "log" })} />
         )}
       </main>
 
@@ -462,11 +482,22 @@ function CreateTableDialog({ run, close }: { run: Run; close: () => void }) {
 
 // ---------- Players ----------
 
-function Players({ s, run, open, close }: ActionProps) {
+/** The career of `playerId` (from the snapshot), or a note if they're gone. */
+function CareerOf({ s, playerId, backLabel, onBack, run, open, close }: ActionProps & { playerId: string; backLabel: string; onBack: () => void }) {
+  const p = s.players.find((player) => player.id === playerId);
+  if (!p) {
+    return (
+      <div className="career adm-career">
+        <button className="back" onClick={onBack}>← {backLabel}</button>
+        <p className="muted">That player isn't on this server any more.</p>
+      </div>
+    );
+  }
+  return <PlayerCareer p={p} s={s} run={run} open={open} close={close} backLabel={backLabel} onBack={onBack} />;
+}
+
+function Players({ s, run, open, close, onSelect }: ActionProps & { onSelect: (playerId: string) => void }) {
   const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState<string | null>(null);
-  const chosen = selected ? s.players.find((p) => p.id === selected) : undefined;
-  if (chosen) return <PlayerCareer p={chosen} s={s} run={run} open={open} close={close} onBack={() => setSelected(null)} />;
   const players = s.players.filter((p) => p.name.toLowerCase().includes(query.trim().toLowerCase()));
   return (
     <>
@@ -484,7 +515,7 @@ function Players({ s, run, open, close }: ActionProps) {
           <span className="adm-actions">Actions</span>
         </div>
         {players.map((p) => (
-          <PlayerRow key={p.id} p={p} s={s} run={run} open={open} close={close} onSelect={() => setSelected(p.id)} />
+          <PlayerRow key={p.id} p={p} s={s} run={run} open={open} close={close} onSelect={() => onSelect(p.id)} />
         ))}
         {players.length === 0 && <p className="adm-empty muted">{s.players.length === 0 ? "Nobody has picked a name yet." : "No match."}</p>}
       </div>
@@ -534,7 +565,7 @@ function PlayerActions({ p, s, run, open, close }: ActionProps & { p: AdminPlaye
 }
 
 /** One player's full career (the in-game Career page's content), with the moderation actions on top. */
-function PlayerCareer({ p, s, run, open, close, onBack }: ActionProps & { p: AdminPlayer; onBack: () => void }) {
+function PlayerCareer({ p, s, run, open, close, backLabel, onBack }: ActionProps & { p: AdminPlayer; backLabel: string; onBack: () => void }) {
   const [career, setCareer] = useState<CareerView | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -554,7 +585,7 @@ function PlayerCareer({ p, s, run, open, close, onBack }: ActionProps & { p: Adm
 
   return (
     <div className="career adm-career">
-      <button className="back" onClick={onBack}>← Players</button>
+      <button className="back" onClick={onBack}>← {backLabel}</button>
       <div className="adm-toolbar adm-career-head">
         <div className="adm-player-name">
           <span className={`adm-dot ${p.online ? "on" : ""}`} title={p.online ? "Online" : "Offline"} />
@@ -804,55 +835,6 @@ function Timeouts({ s, run, open, close }: ActionProps) {
           </div>
         ))}
         {s.timeouts.length === 0 && <p className="adm-empty muted">No timeouts. Players who leave a poker table get a 30-minute one for that table automatically.</p>}
-      </div>
-    </>
-  );
-}
-
-// ---------- AI log ----------
-
-function AiLog() {
-  const [stats, setStats] = useState<LlmStats | null>(null);
-  useEffect(() => {
-    const load = () => api.llm(200).then(setStats, () => {});
-    void load();
-    const timer = setInterval(load, 2000);
-    return () => clearInterval(timer);
-  }, []);
-  if (!stats) return <p className="muted">Loading…</p>;
-  const reasons = Object.entries(stats.fallbackReasons);
-  return (
-    <>
-      <div className="adm-toolbar">
-        <h2 className="adm-h">AI log</h2>
-        <span className="muted adm-note">
-          {stats.calls} decisions · {stats.fallbacks} fallbacks{reasons.length > 0 && ` (${reasons.map(([r, n]) => `${r}: ${n}`).join(", ")})`} · {usd(stats.totalCostUsd)}
-        </span>
-      </div>
-      <div className="adm-list">
-        <div className="adm-log adm-log-head">
-          <span>Time</span>
-          <span>Table</span>
-          <span>Bot</span>
-          <span className="num">Hand</span>
-          <span>Action</span>
-          <span className="num">Time taken</span>
-          <span className="num">Cost</span>
-          <span>Fallback</span>
-        </div>
-        {stats.recent.map((d, i) => (
-          <div key={`${d.at}-${i}`} className="adm-log">
-            <span className="num muted">{clock(d.at)}</span>
-            <span className="adm-ellipsis">{d.table}</span>
-            <span className="adm-ellipsis">{d.bot}</span>
-            <span className="num muted">#{d.handId}</span>
-            <span className="adm-ellipsis">{d.action}</span>
-            <span className="num">{(d.ms / 1000).toFixed(1)}s</span>
-            <span className="num muted">{usd(d.costUsd)}</span>
-            <span className={`adm-ellipsis ${d.fallback ? "bad" : "muted"}`} title={d.fallback ?? undefined}>{d.fallback ?? "—"}</span>
-          </div>
-        ))}
-        {stats.recent.length === 0 && <p className="adm-empty muted">No AI decisions yet. AI bots only ask Claude while a human is at their table.</p>}
       </div>
     </>
   );

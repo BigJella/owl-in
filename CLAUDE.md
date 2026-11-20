@@ -126,7 +126,7 @@ apps/
     src/components/ClockBlock.tsx  ClockBlock + useNow, shared by both table pages
     src/components/ChipChart.tsx   Career chips-over-time chart (SVG, hover/keyboard tooltip)
     src/admin/                Admin panel (second Vite entry, admin.html): AdminApp (Overview / Tables / Players / Timeouts /
-                              AI log tabs, dialogs), api.ts (fetch wrapper with X-Owl-Admin), admin.css
+                              Logging tabs, dialogs), Logging.tsx (the event log), api.ts (fetch wrapper with X-Owl-Admin), admin.css
     src/pages/                NamePage (name + Public/Private career), HomePage, PokerLobbyPage (sortable/filterable room list, buy-in/create dialogs),
                               CareerPage (stats panels, table history with expandable hands), LeaderboardPage,
                               BlackjackLobbyPage, BlackjackTablePage (strip; sidebar BetPanel / insurance / PlayPanel),
@@ -245,7 +245,17 @@ it/owl-live/index.html        The itcan.do chat query page (live stats strip, ch
 - **Admin panel** at `localhost:5173/admin.html`, **this computer only**. Separate from the player site (no socket, no identity).
   Tabs: Overview (money with a conservation check, people, AI stats), Tables (create; per-table max bots / max AI; close;
   per-bot Auto / Script / AI), Players (kick, timeout, bankroll, rename, ban/unban; click a name for their full career: the
-  Career page's `CareerDetails` with the same actions on top, private careers included), Timeouts, AI log. Polls `/snapshot` every 1s.
+  Career page's `CareerDetails` with the same actions on top, private careers included), Timeouts, Logging. Polls `/snapshot` every 1s.
+- **Logging tab** (the event log, `admin/EventLog.ts`, `GET /log`): **every poker hand and blackjack round** (bot-only tables
+  included), **every LLM decision** and **every admin action**, refusals too ("Refused: …" with the reason). Newest first,
+  live (polls `after` the newest id every 2s), "Load older" pages back. Filters: event types (Hands / AI decisions / Admin
+  actions, multi-select with counts), game, table, text search, "Only hands with players". A row expands: a poker hand's
+  seats (position, last action, shown cards, wagered, net), a blackjack round's dealer and spots, an LLM decision's
+  timing/cost/fallback, an admin action's result. **Human names open their career** (Back returns to Logging, filters kept);
+  bots aren't clickable. In memory, capped per kind (5,000 hands, 2,000 AI decisions, 2,000 admin actions) so busy bot
+  tables never push out admin actions. **No hidden cards:** poker hole cards appear only if shown at a showdown.
+  Admin actions are logged in `AdminService` (`audit` / `refusable`); hands in `PokerRoom.logHand` /
+  `BlackjackRoom.logRound`; LLM decisions in `index.ts`. New admin operations must be logged the same way.
 - **Kick:** like a cash-out (queued mid-hand / mid-round), with an optional per-table timeout (0 = none).
 - **Ban** is by browser token (the identity): removed from their table, disconnected, refused at connect and at `identify`
   (`code: "banned"`); the client shows a plain "You've been banned" screen. Unban lifts it. Clearing site data dodges it
@@ -393,7 +403,7 @@ it/owl-live/index.html        The itcan.do chat query page (live stats strip, ch
 - [x] Shared fixed-grid table strip (identical for all players, no shifting); sidebar with static info top / controls bottom;
       clock + "+20s next turn" preview between turns
 - [x] Git repo on `main`, pushed to GitHub (`origin` → BigJella/owl-in)
-- [x] Tests: 127 Vitest tests (poker + blackjack engines, rooms with fake timers incl. soaks); `scripts/bots.mjs` and
+- [x] Tests: 137 Vitest tests (poker + blackjack engines, rooms with fake timers incl. soaks); `scripts/bots.mjs` and
       `scripts/blackjack-bots.mjs` e2e
 - [x] Blackjack: engine (shoe, S17, 3:2, double/split/insurance/late surrender), BlackjackRoom (spots, bot fill 1–3,
       betting window, insurance, clock), lobby + table page + Pixi renderer (shoe/tray levels, deal/flip/payout/sweep/shuffle
@@ -403,7 +413,7 @@ it/owl-live/index.html        The itcan.do chat query page (live stats strip, ch
 - [ ] Real card and chip art (placeholders are SVGs; swap the files and keep the names, change `CARD_EXT` for PNGs)
 - [x] LLM bots: headless Claude Code CLI per decision, script/LLM mode per bot, per-table max AI, AI tag, script fallback
 - [x] Management API (`/api/admin`, localhost only) + admin panel (players, tables, totals, bans, timeouts, bot overrides,
-      AI log) + itcan.do chat query page with live charts and its bridge (`npm run it:live`)
+      Logging: every hand, AI decision and admin action) + itcan.do chat query page with live charts and its bridge (`npm run it:live`)
 - [x] Career page (rates, totals, vs players/bots, table history with every hand) and leaderboard (by Dining Dollars),
       public/private careers
 - [ ] Persistence (bankrolls, penalties, rooms and career stats are in memory; a server restart wipes them)
@@ -455,6 +465,7 @@ header `X-Owl-Admin: 1`**. Responses never contain browser tokens, IPs or hidden
 |---|---|
 | `GET /snapshot` | Everything: totals (with `conserved`), tables + seats, players, timeouts, LLM stats |
 | `GET /tables`, `/tables/:id`, `/players`, `/timeouts`, `/llm?limit=` | Parts of the snapshot (`/llm` has up to 500 decisions) |
+| `GET /log` | The event log, newest first: `?kinds=hand,llm,admin&game=&tableId=&playerId=&q=&humansOnly=1&before=&after=&limit=` (≤500). Returns `{entries, more, counts}` |
 | `POST /tables` | `{game, name, bigBlind \| minBet, maxBots?, maxAi?}` |
 | `PATCH /tables/:id` | `{maxBots?, maxAi?}` |
 | `POST /tables/:id/close` | Close after the current hand / round |

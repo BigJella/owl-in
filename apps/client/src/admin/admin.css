@@ -103,10 +103,38 @@
   display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 100px minmax(0, 1.2fr) 160px; align-items: center; gap: 12px;
   padding: 10px 16px; border-top: 1px solid var(--line); font-size: 14px;
 }
+/* Logging: fixed columns so rows never shift as entries arrive. */
 .adm-log {
-  display: grid; grid-template-columns: 84px minmax(0, 1fr) minmax(0, 1fr) 60px minmax(0, 1fr) 80px 70px minmax(0, 1fr); align-items: center; gap: 10px;
-  padding: 8px 16px; border-top: 1px solid var(--line); font-size: 13px;
+  display: grid; grid-template-columns: 76px 80px minmax(0, 0.9fr) minmax(0, 1.1fr) minmax(0, 2.4fr); align-items: center; gap: 12px;
+  padding: 8px 16px; border-top: 1px solid var(--line); font-size: 13px; min-height: 40px;
 }
+.adm-log:not(.adm-log-head) { cursor: pointer; }
+.adm-log:not(.adm-log-head):hover, .adm-log.open { background: var(--surface-2); }
+.adm-log:focus-visible { outline: 1px solid var(--gold); outline-offset: -1px; }
+.adm-log-head { min-height: 0; }
+.adm-kind-tag { justify-content: center; width: 72px; padding: 2px 0; font-size: 10px; }
+.adm-log-summary .caret { display: inline-block; width: 14px; color: var(--muted); font-style: normal; }
+.adm-log-bot { color: var(--muted); }
+.adm-log-filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 14px; }
+.adm-log-table-select { max-width: 240px; }
+.adm-log-humans { font-size: 13px; color: var(--muted); }
+.adm-kinds { display: flex; border: 1px solid var(--line); }
+.adm-kinds button {
+  height: 36px; padding: 0 12px; display: inline-flex; align-items: center; gap: 8px; border: 0; background: var(--black); color: var(--muted);
+  font-family: var(--display); font-size: 12px; letter-spacing: 1px; text-transform: uppercase;
+}
+.adm-kinds button + button { border-left: 1px solid var(--line); }
+.adm-kinds button:hover:not(.on) { color: var(--gold); }
+.adm-kinds button.on { background: var(--gold); color: var(--black); }
+.adm-kind-count { min-width: 3ch; text-align: right; font-variant-numeric: tabular-nums; opacity: 0.75; }
+.adm-log-detail { padding: 12px 16px 16px 112px; border-top: 1px solid var(--line); background: var(--black); font-size: 13px; }
+.adm-log-facts { display: flex; flex-wrap: wrap; gap: 6px 22px; margin: 0 0 10px; }
+.adm-log-facts dt { color: var(--muted); font-family: var(--display); font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; align-self: center; }
+.adm-log-facts dd { margin: 0 0 0 -14px; }
+.adm-log-facts:last-child { margin-bottom: 0; }
+.adm-log-hand { font-size: 13px; }
+.adm-bj-hands { display: flex; flex-direction: column; gap: 4px; }
+.adm-log-more { display: flex; justify-content: center; padding: 14px 0 0; }
 
 /* ---------- Dialogs & toast ---------- */
 .adm-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -138,6 +166,7 @@
   .adm-split { grid-template-columns: 1fr; }
   .adm-list, .adm-seats { overflow-x: auto; }
   .adm-player, .adm-timeout, .adm-log, .adm-seat { min-width: 760px; }
+  .adm-log-detail { padding-left: 16px; }
   .adm-search { width: 100%; }
 }
 

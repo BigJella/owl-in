@@ -14,6 +14,7 @@ export type CompleteFn = (prompt: string, signal: AbortSignal) => Promise<Comple
 export interface LlmDecisionLog {
   at: number;
   table: string;
+  tableId: string;
   bot: string;
   handId: number;
   action: PokerAction;
@@ -60,7 +61,7 @@ export class LlmStrategy implements PokerStrategy {
       }
     }
     const me = view.mySeat === null ? null : view.seats[view.mySeat];
-    this.log?.({ at: Date.now(), table: view.name, bot: me?.name ?? "?", handId: view.handId, action, ms: Date.now() - started, costUsd, fallback });
+    this.log?.({ at: Date.now(), table: view.name, tableId: view.roomId, bot: me?.name ?? "?", handId: view.handId, action, ms: Date.now() - started, costUsd, fallback });
     return action;
   }
 }

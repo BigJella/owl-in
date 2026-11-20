@@ -1,4 +1,6 @@
-import type { BotMode, PlayerKind } from "./poker";
+import type { HandResult } from "./blackjack";
+import type { PokerHandResult } from "./career";
+import type { BotMode, PlayerKind, PlayingCard } from "./poker";
 import type { GameType } from "./types";
 
 /**
@@ -148,4 +150,144 @@ export interface AdminSnapshot {
   players: AdminPlayer[];
   timeouts: AdminTimeout[];
   llm: LlmStats;
+}
+
+// ---------- Event log (the admin panel's Logging tab, GET /api/admin/log) ----------
+
+export type AdminLogKind = "hand" | "llm" | "admin";
+export const ADMIN_LOG_KINDS: AdminLogKind[] = ["hand", "llm", "admin"];
+export const ADMIN_LOG_KIND_LABEL: Record<AdminLogKind, string> = { hand: "Hands", llm: "AI decisions", admin: "Admin actions" };
+
+/** A player mentioned by a log entry. `playerId` is set for humans only (their career can be opened). */
+export interface AdminLogPlayer {
+  playerId: string | null;
+  name: string;
+  kind: PlayerKind;
+}
+
+export interface PokerHandLog {
+  game: "poker";
+  handId: number;
+  stakes: string;
+  board: PlayingCard[];
+  pot: number;
+  seats: {
+    seat: number;
+    player: AdminLogPlayer;
+    position: "D" | "SB" | "BB" | null;
+    wagered: number;
+    /** Profit or loss for the hand. */
+    net: number;
+    result: PokerHandResult;
+    lastAction: string | null;
+    showdownHand: string | null;
+    /** Only cards shown at a showdown (never hidden ones). */
+    shown: PlayingCard[] | null;
+  }[];
+}
+
+export interface BlackjackRoundLog {
+  game: "blackjack";
+  roundId: number;
+  stakes: string;
+  dealer: { cards: PlayingCard[]; total: number };
+  spots: {
+    /** 0 = spot 1. */
+    spot: number;
+    player: AdminLogPlayer;
+    insurance: number;
+    insurancePayout: number;
+    hands: { cards: PlayingCard[]; bet: number; doubled: boolean; split: boolean; result: HandResult; payout: number }[];
+    /** Profit or loss for the round (all hands and insurance). */
+    net: number;
+  }[];
+}
+
+export interface LlmLog {
+  bot: AdminLogPlayer;
+  handId: number;
+  /** "fold", "call", "raise to $60", ... */
+  action: string;
+  ms: number;
+  costUsd: number | null;
+  /** Why the script decided instead (null: the model decided). */
+  fallback: string | null;
+}
+
+export type AdminActionType =
+  | "create-table"
+  | "update-table"
+  | "close-table"
+  | "bot-mode"
+  | "kick"
+  | "ban"
+  | "unban"
+  | "bankroll"
+  | "rename"
+  | "timeout"
+  | "clear-timeout";
+
+export const ADMIN_ACTION_LABEL: Record<AdminActionType, string> = {
+  "create-table": "Create table",
+  "update-table": "Table settings",
+  "close-table": "Close table",
+  "bot-mode": "Bot mode",
+  kick: "Kick",
+  ban: "Ban",
+  unban: "Unban",
+  bankroll: "Bankroll",
+  rename: "Rename",
+  timeout: "Timeout",
+  "clear-timeout": "Remove timeout",
+};
+
+export interface AdminActionLog {
+  action: AdminActionType;
+  /** The player it was about, if any. */
+  target: AdminLogPlayer | null;
+  /** false: the server refused it (`error` says why). */
+  ok: boolean;
+  error: string | null;
+}
+
+export interface AdminLogEntry {
+  /** Increases with every entry (use it to page: `before` / `after`). */
+  id: number;
+  at: number;
+  kind: AdminLogKind;
+  game: GameType | null;
+  table: { id: string; name: string } | null;
+  /** One line, e.g. "Hand #12 · pot $340 · Ada won $170 (Two Pair)". */
+  summary: string;
+  /** Everyone the entry mentions (clickable when they're human). */
+  players: AdminLogPlayer[];
+  hand?: PokerHandLog | BlackjackRoundLog;
+  llm?: LlmLog;
+  admin?: AdminActionLog;
+}
+
+export interface AdminLogQuery {
+  kinds?: AdminLogKind[];
+  game?: GameType;
+  tableId?: string;
+  playerId?: string;
+  /** Case-insensitive match on the summary, table and player names. */
+  q?: string;
+  /** Hands only: skip hands no human played. */
+  humansOnly?: boolean;
+  /** Entries older than this id (paging back). */
+  before?: number;
+  /** Entries newer than this id (polling for new ones). */
+  after?: number;
+  /** Default 100, max 500. */
+  limit?: number;
+}
+
+export interface AdminLogPage {
+  /** Newest first. */
+  entries: AdminLogEntry[];
+  /** Older matching entries exist beyond this page. */
+  more: boolean;
+  /** Entries held right now, by kind (before filtering). */
+  counts: Record<AdminLogKind, number>;
 }

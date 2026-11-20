@@ -15,6 +15,7 @@ import type { CompleteFn, LlmDecisionLog } from "./ai/LlmStrategy";
 import { AdminService } from "./admin/AdminService";
 import { adminRoutes } from "./admin/adminRoutes";
 import { Moderation } from "./admin/Moderation";
+import { EventLog } from "./admin/EventLog";
 import type { GameServer } from "./networking/types";
 import { BLACKJACK_LOBBY_CHANNEL, LOBBY_CHANNEL, registerConnection } from "./networking/handlers/connectionHandler";
 
@@ -30,6 +31,8 @@ const bank = new HouseBank();
 const stats = new MemoryStatsStore();
 // Bans, sitewide and per-table timeouts (in memory too).
 const moderation = new Moderation();
+// The admin panel's Logging tab: every hand, LLM decision and admin action (in memory).
+const eventLog = new EventLog();
 
 // LLM bots ask the local Claude Code CLI. Each poker table starts with OWL_DEFAULT_BOTS bots, OWL_LLM_BOTS of
 // them LLM bots (defaults 4 and 2); admins change both per table.
@@ -45,6 +48,16 @@ const telemetry = new LlmTelemetry(complete !== null, llmConfig.model);
 const logLlmDecision = (d: LlmDecisionLog) => {
   telemetry.record(d);
   const action = d.action.type === "raise" ? `raise to ${formatDD(d.action.to)}` : d.action.type;
+  const bot = { playerId: null, name: d.bot, kind: "bot" as const };
+  eventLog.add({
+    at: d.at,
+    kind: "llm",
+    game: "poker",
+    table: { id: d.tableId, name: d.table },
+    summary: `${d.bot}: ${action} · ${(d.ms / 1000).toFixed(1)}s${d.fallback ? ` · script fallback (${d.fallback})` : ""}`,
+    players: [bot],
+    llm: { bot, handId: d.handId, action, ms: d.ms, costUsd: d.costUsd, fallback: d.fallback },
+  });
   console.log(`[llm] ${d.table} #${d.handId} ${d.bot}: ${action} (${d.ms}ms)${d.fallback ? ` fallback: ${d.fallback}` : ""}`);
 };
 
@@ -52,6 +65,7 @@ const rooms = new RoomManager({
   bank,
   stats,
   moderation,
+  eventLog,
   defaults: { maxBots: llmConfig.defaultMaxBots, maxAi: llmConfig.defaultMaxAi },
   llm: { complete, log: logLlmDecision },
   onRoomsChanged: (list) => io.to(LOBBY_CHANNEL).emit("poker:rooms", list),
@@ -61,6 +75,7 @@ const blackjack = new BlackjackRoomManager({
   bank,
   stats,
   moderation,
+  eventLog,
   onRoomsChanged: (list) => io.to(BLACKJACK_LOBBY_CHANNEL).emit("blackjack:rooms", list),
 });
 blackjack.seed();
@@ -73,7 +88,7 @@ const publishLobby = () =>
   });
 
 // Management API (localhost only). Mounted before the permissive CORS below, which must never answer for it.
-const admin = new AdminService({ registry, rooms, blackjack, bank, moderation, telemetry, stats, publishLobby });
+const admin = new AdminService({ registry, rooms, blackjack, bank, moderation, telemetry, stats, eventLog, publishLobby });
 app.use("/api/admin", adminRoutes(admin));
 
 app.use(cors());

@@ -24,7 +24,7 @@ const pct = (part: number, whole: number) => (whole > 0 ? `${Math.round((part / 
 
 const SUIT = { spades: "♠", hearts: "♥", diamonds: "♦", clubs: "♣" } as const;
 
-function Cards({ cards }: { cards: PlayingCard[] | null }) {
+export function Cards({ cards }: { cards: PlayingCard[] | null }) {
   if (cards === null) return <span className="muted">Hidden</span>;
   if (cards.length === 0) return <span className="muted">—</span>;
   return (

@@ -1,3 +1,4 @@
+import type { EventLog } from "../admin/EventLog";
 import { randomUUID } from "node:crypto";
 import type { BotMode, PokerRoomSummary, TableSettings } from "@owl-in/shared";
 import type { Moderation } from "../admin/Moderation";
@@ -18,6 +19,8 @@ export interface RoomManagerOptions {
   /** Max bots / max AI for new tables (defaults 4 / 2). */
   defaults?: Partial<TableSettings>;
   moderation?: Moderation;
+  /** The admin panel's event log (every finished hand / round). */
+  eventLog?: EventLog;
   /** Called (batched per tick) whenever the room list changes. */
   onRoomsChanged?: (rooms: PokerRoomSummary[]) => void;
 }
@@ -38,6 +41,7 @@ export class RoomManager {
     const room = new PokerRoom({
       settings: { ...this.options.defaults, ...settings },
       ...(this.options.moderation ? { moderation: this.options.moderation } : {}),
+      ...(this.options.eventLog ? { eventLog: this.options.eventLog } : {}),
       id: randomUUID().slice(0, 8),
       name,
       bigBlind,

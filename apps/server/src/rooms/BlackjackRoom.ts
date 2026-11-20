@@ -20,7 +20,9 @@ import {
   type BlackjackSpotView,
   type BlackjackStage,
   type BlackjackTableView,
+  type BlackjackRoundLog,
 } from "@owl-in/shared";
+import { logPlayer, type EventLog } from "../admin/EventLog";
 import { Moderation, joinBlockMessage } from "../admin/Moderation";
 import { BasicStrategy } from "../ai/BasicStrategy";
 import type { HouseBank } from "../economy/HouseBank";
@@ -93,6 +95,8 @@ export interface BlackjackRoomOptions {
   maxBots?: number;
   /** Bans and timeouts, shared by every table (a private one if omitted, e.g. in tests). */
   moderation?: Moderation;
+  /** The admin panel's event log: every settled round is added here. */
+  eventLog?: EventLog;
 }
 
 interface Member {
@@ -678,8 +682,9 @@ export class BlackjackRoom {
     else this.bank.deposit(amount);
   }
 
-  /** The round just settled: record it for every human who played a spot. */
+  /** The round just settled: log it for the admin panel, and record it for every human who played a spot. */
   private recordRound() {
+    this.logRound();
     const stats = this.options.stats;
     if (!stats) return;
     const t = this.table;
@@ -722,6 +727,52 @@ export class BlackjackRoom {
         net: returned - wagered,
       });
     }
+  }
+
+  /** One entry per round in the admin event log (every blackjack card ends up face up, so all of it is public). */
+  private logRound() {
+    const log = this.options.eventLog;
+    if (!log) return;
+    const t = this.table;
+    const dealerBlackjack = isNatural(t.dealer);
+    const spots: BlackjackRoundLog["spots"] = [];
+    this.owners.forEach((owner, spot) => {
+      const s = t.spots[spot]!;
+      if (!owner || s.hands.length === 0) return;
+      const insurance = s.insurance ?? 0;
+      const insurancePayout = dealerBlackjack ? insurance * 3 : 0;
+      const hands = s.hands.map((h) => ({
+        cards: [...h.cards],
+        bet: h.bet,
+        doubled: h.doubled,
+        split: h.split,
+        result: h.result ?? ("lose" as const),
+        payout: h.payout,
+      }));
+      const net = insurancePayout - insurance + hands.reduce((sum, h) => sum + h.payout - h.bet, 0);
+      spots.push({ spot, player: logPlayer(owner, owner instanceof HumanPlayer), insurance, insurancePayout, hands, net });
+    });
+    if (spots.length === 0) return;
+    // One line per player (a player may hold several spots).
+    const byName = new Map<string, number>();
+    for (const s of spots) byName.set(s.player.name, (byName.get(s.player.name) ?? 0) + s.net);
+    const signed = (n: number) => (n > 0 ? `+${formatDD(n)}` : n < 0 ? `−${formatDD(-n)}` : "push");
+    const dealerTotal = handTotal(t.dealer).total;
+    const players = [...new Map(spots.map((s) => [s.player.name, s.player])).values()];
+    log.add({
+      kind: "hand",
+      game: "blackjack",
+      table: { id: this.id, name: this.name },
+      summary: `Round #${t.roundId} · dealer ${dealerBlackjack ? "blackjack" : dealerTotal > 21 ? `bust (${dealerTotal})` : dealerTotal} · ${[...byName].map(([name, net]) => `${name} ${signed(net)}`).join(", ")}`,
+      players,
+      hand: {
+        game: "blackjack",
+        roundId: t.roundId,
+        stakes: `${formatDD(this.minBet)}–${formatDD(this.maxBet)}`,
+        dealer: { cards: [...t.dealer], total: dealerTotal },
+        spots,
+      },
+    });
   }
 
   /** Everything the room holds right now (for conservation checks). */

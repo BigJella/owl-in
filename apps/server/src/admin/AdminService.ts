@@ -1,10 +1,14 @@
 import {
+  ADMIN_ACTION_LABEL,
   ALLOWED_BIG_BLINDS,
   BJ_ALLOWED_MIN_BETS,
   BJ_BOT_SPOTS,
   POKER_MAX_SEATS,
   STARTING_BANKROLL,
   formatDD,
+  type AdminActionType,
+  type AdminLogPage,
+  type AdminLogQuery,
   type AdminPlayer,
   type AdminSnapshot,
   type AdminTable,
@@ -28,6 +32,7 @@ import type { PokerRoom } from "../rooms/PokerRoom";
 import { careerView, sessionHandsFor } from "../stats/careerView";
 import type { StatsStore } from "../stats/StatsStore";
 import { MIN_OPEN_ROOMS, type RoomManager } from "../rooms/RoomManager";
+import { logPlayer, type EventLog } from "./EventLog";
 import type { Moderation } from "./Moderation";
 
 /** A refused admin request: the HTTP status and a message for the panel. */
@@ -49,6 +54,8 @@ export interface AdminServiceDeps {
   telemetry: LlmTelemetry;
   /** Career stats (same store the game's Career page reads). */
   stats?: StatsStore;
+  /** The Logging tab's event log: every admin action (and refusal) is added here. */
+  eventLog?: EventLog;
   /** Called after anything that changes what the lobby shows (player counts). */
   publishLobby?: () => void;
 }
@@ -147,6 +154,12 @@ export class AdminService {
     return this.deps.telemetry.stats(limit);
   }
 
+  /** The event log (hands, LLM decisions, admin actions), newest first. */
+  log(query: AdminLogQuery = {}): AdminLogPage {
+    if (!this.deps.eventLog) return { entries: [], more: false, counts: { hand: 0, llm: 0, admin: 0 } };
+    return this.deps.eventLog.query(query);
+  }
+
   private totals(tables: AdminTable[]): AdminTotals {
     const { registry, bank, moderation } = this.deps;
     const players = registry.all();
@@ -182,6 +195,25 @@ export class AdminService {
     maxBots?: number;
     maxAi?: number;
   }): AdminTable {
+    return this.refusable("create-table", { summary: `${request.game} table "${request.name.trim()}"` }, () => {
+      const table = this.createTableUnlogged(request);
+      const ai = table.settings.maxAi === null ? "" : `, max AI ${table.settings.maxAi}`;
+      this.audit("create-table", {
+        table,
+        summary: `Created ${table.game} table ${table.name} (${table.stakes}, max bots ${table.settings.maxBots}${ai})`,
+      });
+      return table;
+    });
+  }
+
+  private createTableUnlogged(request: {
+    game: GameType;
+    name: string;
+    bigBlind?: number;
+    minBet?: number;
+    maxBots?: number;
+    maxAi?: number;
+  }): AdminTable {
     const name = request.name.trim();
     if (name.length < 1 || name.length > 24) throw new AdminError(400, "Table names are 1–24 characters.");
     if (request.game === "poker") {
@@ -200,6 +232,18 @@ export class AdminService {
   }
 
   updateTable(id: string, request: { maxBots?: number; maxAi?: number | null }): AdminTable {
+    return this.refusable("update-table", { tableId: id }, () => {
+      const table = this.updateTableUnlogged(id, request);
+      const changed = [
+        request.maxBots !== undefined ? `max bots ${table.settings.maxBots}` : null,
+        request.maxAi !== undefined && request.maxAi !== null ? `max AI ${table.settings.maxAi}` : null,
+      ].filter(Boolean);
+      this.audit("update-table", { table, summary: `${table.name}: ${changed.join(", ") || "no change"}` });
+      return table;
+    });
+  }
+
+  private updateTableUnlogged(id: string, request: { maxBots?: number; maxAi?: number | null }): AdminTable {
     const found = this.findTable(id);
     if (found.game === "poker") {
       const room = found.room;
@@ -215,6 +259,17 @@ export class AdminService {
 
   /** Close after the current hand / round. At least two tables of each game always stay open. */
   closeTable(id: string): AdminTable {
+    return this.refusable("close-table", { tableId: id }, () => {
+      const table = this.closeTableUnlogged(id);
+      this.audit("close-table", {
+        table,
+        summary: `Closing ${table.name} after the current ${table.game === "poker" ? "hand" : "round"}`,
+      });
+      return table;
+    });
+  }
+
+  private closeTableUnlogged(id: string): AdminTable {
     const found = this.findTable(id);
     if (found.room.closing) return found.room.admin();
     const open = found.game === "poker" ? this.deps.rooms.openCount() : this.deps.blackjack.openCount();
@@ -229,9 +284,19 @@ export class AdminService {
 
   /** "auto" hands the bot back to the table's AI count. */
   setBotMode(botId: string, mode: BotMode | "auto"): void {
-    if (!this.deps.rooms.setBotOverride(botId, mode === "auto" ? null : mode)) {
-      throw new AdminError(404, "No poker bot with that id (blackjack bots have no AI mode yet).");
-    }
+    const table = this.tables().find((t) => t.seats.some((seat) => seat.playerId === botId)) ?? null;
+    const bot = table?.seats.find((seat) => seat.playerId === botId)?.name ?? "bot";
+    this.refusable("bot-mode", { table, summary: `${bot} to ${mode}` }, () => {
+      if (!this.deps.rooms.setBotOverride(botId, mode === "auto" ? null : mode)) {
+        throw new AdminError(404, "No poker bot with that id (blackjack bots have no AI mode yet).");
+      }
+      const label = mode === "llm" ? "AI" : "Script";
+      this.audit("bot-mode", {
+        table,
+        bots: [bot],
+        summary: mode === "auto" ? `Set ${bot} back to Auto` : `Pinned ${bot} to ${label}`,
+      });
+    });
   }
 
   private checkPokerSettings(maxBots: number | undefined, maxAi: number | undefined, room: PokerRoom | null) {
@@ -262,52 +327,90 @@ export class AdminService {
 
   /** Remove from their table (queued if they're in a hand / round). Optional timeout from that table. */
   kick(playerId: string, timeoutMinutes = 0): void {
-    const player = this.player(playerId);
-    const room = this.roomOf(player);
-    if (!room) throw new AdminError(409, `${player.name} isn't at a table.`);
-    room.kick(player, this.minutes(timeoutMinutes, true) * MINUTE);
-    this.deps.publishLobby?.();
+    this.refusable("kick", { playerId }, () => {
+      const player = this.player(playerId);
+      const room = this.roomOf(player);
+      if (!room) throw new AdminError(409, `${player.name} isn't at a table.`);
+      const minutes = this.minutes(timeoutMinutes, true);
+      room.kick(player, minutes * MINUTE);
+      this.deps.publishLobby?.();
+      this.audit("kick", {
+        target: player,
+        table: room,
+        summary: `Kicked ${player.name} from ${room.name}${minutes > 0 ? ` with a ${minutes}-minute timeout` : ""}`,
+      });
+    });
   }
 
   ban(playerId: string, reason: string | null): void {
-    const player = this.player(playerId);
-    this.deps.moderation.ban(player.id, reason);
-    this.leaveTable(player);
-    player.disconnectBanned(reason);
-    this.deps.publishLobby?.();
+    this.refusable("ban", { playerId }, () => {
+      const player = this.player(playerId);
+      const room = this.roomOf(player) ?? null;
+      this.deps.moderation.ban(player.id, reason);
+      this.leaveTable(player);
+      player.disconnectBanned(reason);
+      this.deps.publishLobby?.();
+      this.audit("ban", { target: player, table: room, summary: `Banned ${player.name}${reason ? ` (${reason})` : ""}` });
+    });
   }
 
   unban(playerId: string): void {
-    const player = this.player(playerId);
-    if (!this.deps.moderation.unban(player.id)) throw new AdminError(409, `${player.name} isn't banned.`);
+    this.refusable("unban", { playerId }, () => {
+      const player = this.player(playerId);
+      if (!this.deps.moderation.unban(player.id)) throw new AdminError(409, `${player.name} isn't banned.`);
+      this.audit("unban", { target: player, summary: `Unbanned ${player.name}` });
+    });
   }
 
   /** Give (positive) or take (negative) Dining Dollars. The house is the other side, so chips stay conserved. */
   adjustBankroll(playerId: string, delta: number): AdminPlayer {
-    const player = this.player(playerId);
-    if (!Number.isInteger(delta) || delta === 0) throw new AdminError(400, "Enter a whole, non-zero amount.");
-    if (player.bankroll + delta < 0) throw new AdminError(400, `${player.name} only has ${formatDD(player.bankroll)} in their bankroll.`);
-    player.bankroll += delta;
-    this.deps.bank.withdraw(delta);
-    player.sendSession();
-    return this.players().find((p) => p.id === player.id)!;
+    const amount = Number.isFinite(delta) ? `${delta < 0 ? "−" : "+"}${formatDD(Math.abs(delta))}` : String(delta);
+    return this.refusable("bankroll", { playerId, summary: amount }, () => {
+      const player = this.player(playerId);
+      if (!Number.isInteger(delta) || delta === 0) throw new AdminError(400, "Enter a whole, non-zero amount.");
+      if (player.bankroll + delta < 0) throw new AdminError(400, `${player.name} only has ${formatDD(player.bankroll)} in their bankroll.`);
+      player.bankroll += delta;
+      this.deps.bank.withdraw(delta);
+      player.sendSession();
+      const change = delta > 0 ? `Gave ${player.name} ${formatDD(delta)}` : `Took ${formatDD(-delta)} from ${player.name}`;
+      this.audit("bankroll", { target: player, summary: `${change} (bankroll now ${formatDD(player.bankroll)})` });
+      return this.players().find((p) => p.id === player.id)!;
+    });
   }
 
   rename(playerId: string, rawName: unknown): AdminPlayer {
-    const player = this.player(playerId);
-    const name = nameSchema.safeParse(rawName);
-    if (!name.success) throw new AdminError(400, name.error.issues[0]?.message ?? "Invalid name.");
-    if (this.deps.registry.nameTaken(player.token, name.data)) throw new AdminError(409, `"${name.data}" belongs to another player.`);
-    this.deps.registry.identify(player.token, name.data);
-    player.sendSession(); // the browser saves the new name from its session
-    this.roomOf(player)?.refresh();
-    return this.players().find((p) => p.id === player.id)!;
+    return this.refusable("rename", { playerId, summary: `to "${String(rawName).slice(0, 40)}"` }, () => {
+      const player = this.player(playerId);
+      const before = player.name;
+      const name = nameSchema.safeParse(rawName);
+      if (!name.success) throw new AdminError(400, name.error.issues[0]?.message ?? "Invalid name.");
+      if (this.deps.registry.nameTaken(player.token, name.data)) throw new AdminError(409, `"${name.data}" belongs to another player.`);
+      this.deps.registry.identify(player.token, name.data);
+      player.sendSession(); // the browser saves the new name from its session
+      this.roomOf(player)?.refresh();
+      this.audit("rename", { target: player, summary: `Renamed ${before} to ${player.name}` });
+      return this.players().find((p) => p.id === player.id)!;
+    });
   }
 
   // ---------- timeouts ----------
 
   /** Add or replace a timeout. A player at the table (or anywhere, for sitewide) is removed from it. */
   setTimeout(request: { playerId: string; scope: TimeoutScope; roomId?: string | null; minutes: number; reason?: string | null }): void {
+    this.refusable("timeout", { playerId: request.playerId, tableId: request.roomId ?? undefined }, () => {
+      this.setTimeoutUnlogged(request);
+      const player = this.player(request.playerId);
+      const room = request.scope === "table" && request.roomId ? this.findTable(request.roomId).room : null;
+      const reason = request.reason?.trim();
+      this.audit("timeout", {
+        target: player,
+        table: room,
+        summary: `Timed out ${player.name} from ${room ? room.name : "every table"} for ${request.minutes} min${reason ? ` (${reason})` : ""}`,
+      });
+    });
+  }
+
+  private setTimeoutUnlogged(request: { playerId: string; scope: TimeoutScope; roomId?: string | null; minutes: number; reason?: string | null }): void {
     const player = this.player(request.playerId);
     const ms = this.minutes(request.minutes, false) * MINUTE;
     const reason = request.reason?.trim() || null;
@@ -324,14 +427,85 @@ export class AdminService {
   }
 
   clearTimeout(request: { playerId: string; scope: TimeoutScope; roomId?: string | null }): void {
-    const player = this.player(request.playerId);
-    const removed =
-      request.scope === "site"
-        ? this.deps.moderation.clearSiteTimeout(player.id)
-        : request.roomId
-          ? this.deps.moderation.clearTableTimeout(request.roomId, player.id)
-          : false;
-    if (!removed) throw new AdminError(404, "No such timeout.");
+    this.refusable("clear-timeout", { playerId: request.playerId, tableId: request.roomId ?? undefined }, () => {
+      const player = this.player(request.playerId);
+      const tableTimeout =
+        request.scope === "table"
+          ? this.timeouts().find((t) => t.scope === "table" && t.roomId === request.roomId && t.playerId === player.id)
+          : undefined;
+      const removed =
+        request.scope === "site"
+          ? this.deps.moderation.clearSiteTimeout(player.id)
+          : request.roomId
+            ? this.deps.moderation.clearTableTimeout(request.roomId, player.id)
+            : false;
+      if (!removed) throw new AdminError(404, "No such timeout.");
+      const roomName = tableTimeout?.roomName ?? null;
+      this.audit("clear-timeout", {
+        target: player,
+        table: request.roomId && roomName ? { id: request.roomId, name: roomName } : null,
+        summary: `Removed the timeout on ${player.name} from ${request.scope === "site" ? "every table" : (roomName ?? "a table")}`,
+      });
+    });
+  }
+
+  // ---------- event log ----------
+
+  /** Add an admin action to the event log. */
+  private audit(
+    action: AdminActionType,
+    entry: {
+      summary: string;
+      target?: HumanPlayer | null;
+      /** A room or a table snapshot: anything with an id and a name. */
+      table?: { id: string; name: string } | null;
+      bots?: string[];
+      ok?: boolean;
+      error?: string | null;
+    },
+  ) {
+    const log = this.deps.eventLog;
+    if (!log) return;
+    const target = entry.target ? logPlayer(entry.target, true) : null;
+    const table = entry.table ?? null;
+    const game: GameType | null = !table
+      ? null
+      : this.deps.rooms.get(table.id)
+        ? "poker"
+        : this.deps.blackjack.get(table.id)
+          ? "blackjack"
+          : null;
+    log.add({
+      kind: "admin",
+      game,
+      table: table ? { id: table.id, name: table.name } : null,
+      summary: entry.summary,
+      players: [...(target ? [target] : []), ...(entry.bots ?? []).map((name) => ({ playerId: null, name, kind: "bot" as const }))],
+      admin: { action, target, ok: entry.ok ?? true, error: entry.error ?? null },
+    });
+  }
+
+  /**
+   * Run an admin operation. If the server refuses it (an AdminError), the refusal is logged with the reason
+   * before it goes back to the caller. `context` says what was asked for, for that log line.
+   */
+  private refusable<T>(
+    action: AdminActionType,
+    context: { playerId?: string; tableId?: string; table?: { id: string; name: string } | null; summary?: string },
+    run: () => T,
+  ): T {
+    try {
+      return run();
+    } catch (error) {
+      if (error instanceof AdminError) {
+        const target = context.playerId ? (this.deps.registry.byPlayerId(context.playerId) ?? null) : null;
+        let table: { id: string; name: string } | null = context.table ?? null;
+        if (!table && context.tableId) table = this.deps.rooms.get(context.tableId) ?? this.deps.blackjack.get(context.tableId) ?? null;
+        const what = [ADMIN_ACTION_LABEL[action], target?.name, context.summary].filter(Boolean).join(" ");
+        this.audit(action, { target, table, summary: `Refused: ${what}. ${error.message}`, ok: false, error: error.message });
+      }
+      throw error;
+    }
   }
 
   // ---------- helpers ----------

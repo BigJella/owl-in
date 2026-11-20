@@ -26,10 +26,29 @@ const timeoutSchema = z.object({
   reason: z.string().max(200).nullable().optional(),
 });
 const clearTimeoutSchema = timeoutSchema.pick({ playerId: true, scope: true, roomId: true });
+const idParam = z.coerce.number().int().nonnegative().optional();
+/** GET /log query string: kinds=hand,llm,admin & game & tableId & playerId & q & humansOnly=1 & before & after & limit. */
+const logQuerySchema = z.object({
+  kinds: z
+    .string()
+    .optional()
+    .transform((v) => (v ? v.split(",").filter((k): k is "hand" | "llm" | "admin" => k === "hand" || k === "llm" || k === "admin") : undefined)),
+  game: z.enum(["poker", "blackjack"]).optional(),
+  tableId: z.string().max(100).optional(),
+  playerId: z.string().max(100).optional(),
+  q: z.string().max(100).optional(),
+  humansOnly: z
+    .string()
+    .optional()
+    .transform((v) => v === "1" || v === "true"),
+  before: idParam,
+  after: idParam,
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+});
 
-/** Parse a body or answer 400. */
-function body<T>(schema: z.ZodType<T>, request: Request): T {
-  const parsed = schema.safeParse(request.body ?? {});
+/** Parse a body (or, for GETs, the query string) or answer 400. */
+function body<T>(schema: z.ZodType<T, unknown>, request: Request, from: "body" | "query" = "body"): T {
+  const parsed = schema.safeParse(from === "query" ? request.query : (request.body ?? {}));
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
     throw new AdminError(400, issue ? `${issue.path.join(".") || "body"}: ${issue.message}` : "Invalid request.");
@@ -85,6 +104,24 @@ export function adminRoutes(admin: AdminService): Router {
     handle((r) => {
       const limit = Number(r.query.limit ?? 100);
       return admin.llm(Number.isFinite(limit) ? limit : 100);
+    }),
+  );
+
+  router.get(
+    "/log",
+    handle((r) => {
+      const { kinds, game, tableId, playerId, q, humansOnly, before, after, limit } = body(logQuerySchema, r, "query");
+      return admin.log({
+        ...(kinds ? { kinds } : {}),
+        ...(game ? { game } : {}),
+        ...(tableId ? { tableId } : {}),
+        ...(playerId ? { playerId } : {}),
+        ...(q ? { q } : {}),
+        humansOnly,
+        ...(before !== undefined ? { before } : {}),
+        ...(after !== undefined ? { after } : {}),
+        ...(limit !== undefined ? { limit } : {}),
+      });
     }),
   );
 

@@ -1,3 +1,4 @@
+import type { EventLog } from "../admin/EventLog";
 import { randomUUID } from "node:crypto";
 import type { BlackjackRoomSummary } from "@owl-in/shared";
 import type { Moderation } from "../admin/Moderation";
@@ -13,6 +14,8 @@ export interface BlackjackRoomManagerOptions {
   stats?: StatsStore;
   timing?: Partial<BlackjackTiming>;
   moderation?: Moderation;
+  /** The admin panel's event log (every finished hand / round). */
+  eventLog?: EventLog;
   /** Called (batched per tick) whenever the room list changes. */
   onRoomsChanged?: (rooms: BlackjackRoomSummary[]) => void;
 }
@@ -33,6 +36,7 @@ export class BlackjackRoomManager {
     const room = new BlackjackRoom({
       ...(maxBots !== undefined ? { maxBots } : {}),
       ...(this.options.moderation ? { moderation: this.options.moderation } : {}),
+      ...(this.options.eventLog ? { eventLog: this.options.eventLog } : {}),
       id: `bj-${randomUUID().slice(0, 8)}`,
       name,
       minBet,
