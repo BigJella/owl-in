@@ -152,6 +152,14 @@ export interface AdminSnapshot {
   llm: LlmStats;
 }
 
+/** GET /api/admin/network: this computer's LAN addresses, for the presentation's "join at http://<ip>:5173" slide. */
+export interface AdminNetwork {
+  /** Non-internal IPv4 addresses, the likeliest LAN address first (private ranges first, virtual adapters last). */
+  addresses: string[];
+  /** The player site's port (Vite dev server). */
+  clientPort: number;
+}
+
 // ---------- Event log (the admin panel's Logging tab, GET /api/admin/log) ----------
 
 export type AdminLogKind = "hand" | "llm" | "admin";

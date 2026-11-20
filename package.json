@@ -16,7 +16,8 @@
     "build": "npm run build -w apps/client",
     "start": "npm run start -w apps/server",
     "typecheck": "npm run typecheck --workspaces",
-    "test": "vitest run"
+    "test": "vitest run",
+    "present:build": "node scripts/build-presentation.mjs"
   },
   "devDependencies": {
     "concurrently": "^10.0.7",

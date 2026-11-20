@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OWL IN · KSU Card Club</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23000'/%3E%3Crect x='4' y='4' width='8' height='8' fill='%23ffb81c'/%3E%3C/svg%3E">
+<!--
+  OWL IN hackathon presentation (IEEE CS Game Sprint + itcan.do).
+  Built by `npm run present:build` from presentation/src/ into ONE self-contained file (fonts, scripts and data inlined).
+  Live data: present from http://localhost:3000/present while the game server runs.
+  Opened from disk (or after downloading it from Google Drive) it uses sample data, marked "Server offline · sample data".
+  Keys: ← → / Space / PageUp PageDown / Home End, F = fullscreen. Click the left or right third of the screen.
+-->
+<style>/*@fonts*/</style>
+<style>/*@css*/</style>
+</head>
+<body>
+<div id="viewport">
+<main id="stage">
+
+<!-- ============================== 1. Title ============================== -->
+<section class="slide slide-title" data-name="Title">
+  <div class="title-copy">
+    <div class="kicker" data-reveal>KSU AI Club Hackathon 2026</div>
+    <h1 data-reveal>OWL IN</h1>
+    <div class="title-sub" data-reveal>KSU Card Club</div>
+    <p class="title-tag" data-reveal>Texas Hold'em and Blackjack on any device on the network, against each other and against AI players.</p>
+    <div class="badges" data-reveal><span class="tag gold">IEEE CS Game Sprint</span><span class="tag gold">itcan.do track</span></div>
+    <div class="team" data-reveal>Yusuf Abdulahi</div>
+  </div>
+  <div class="card-fan" aria-hidden="true">
+    <div class="pcard" style="--i:0"><span class="pc-r">10</span><span class="pc-s">♠</span><span class="pc-big">♠</span></div>
+    <div class="pcard" style="--i:1"><span class="pc-r">J</span><span class="pc-s">♠</span><span class="pc-big">♠</span></div>
+    <div class="pcard" style="--i:2"><span class="pc-r">Q</span><span class="pc-s">♠</span><span class="pc-big">♠</span></div>
+    <div class="pcard" style="--i:3"><span class="pc-r">K</span><span class="pc-s">♠</span><span class="pc-big">♠</span></div>
+    <div class="pcard" style="--i:4"><span class="pc-r">A</span><span class="pc-s">♠</span><span class="pc-big">♠</span></div>
+  </div>
+</section>
+
+<!-- ============================== 2. Join ============================== -->
+<section class="slide" data-name="Join">
+  <header class="head"><div class="kicker" data-reveal>Play along</div><h2 data-reveal>Join the game now</h2></header>
+  <div class="join-grid">
+    <div class="join-left">
+      <p class="lead" data-reveal>On your phone or laptop, on this Wi-Fi, open</p>
+      <div id="join-url" class="join-url" data-reveal title="Click to edit the address" tabindex="0" spellcheck="false">http://192.168.x.x:5173</div>
+      <ol class="steps" data-reveal>
+        <li><b>1</b>Pick a name</li>
+        <li><b>2</b>Find a table: poker or blackjack</li>
+        <li><b>3</b>Play your $10,000 Dining Dollars</li>
+      </ol>
+    </div>
+    <div class="qr-box" data-reveal><div id="qr"></div><div class="qr-cap">Scan to join</div></div>
+  </div>
+  <div class="panel live join-live" data-reveal>
+    <div class="live-tag"><span class="lt-on">Live</span><span class="lt-off">Server offline · sample data</span></div>
+    <div class="jl-stat"><div class="num" id="j-online">0</div><div class="lbl">Players online</div></div>
+    <div class="jl-stat"><div class="num" id="j-seated">0</div><div class="lbl">At a table</div></div>
+    <div class="jl-stat"><div class="num" id="j-tables">0</div><div class="lbl">Tables open</div></div>
+    <div class="jl-stat"><div class="num" id="j-bots">0</div><div class="lbl">Bots playing</div></div>
+    <div class="jl-names" id="j-names"></div>
+  </div>
+</section>
+
+<!-- ============================== 3. Overview & rules ============================== -->
+<section class="slide" data-name="Overview">
+  <header class="head"><div class="kicker" data-reveal>Game overview</div><h2 data-reveal>Two card games, one club</h2></header>
+  <p class="lead narrow" data-reveal>OWL IN is a multiplayer card-game website for the local network. Pick a name, get <b>$10,000 KSU Dining Dollars</b> (play money) and sit at live tables with other people and AI bots.</p>
+  <div class="cols-3">
+    <div class="rule-card" data-reveal>
+      <h3>Texas Hold'em</h3>
+      <ul>
+        <li>8 seats, blinds and a moving button. No-limit betting, side pots.</li>
+        <li><b>Your clock:</b> +20 s each turn, up to 120 s. At 0 you auto check or fold.</li>
+        <li>Ready up between hands. Busted? Reload or cash out.</li>
+      </ul>
+    </div>
+    <div class="rule-card" data-reveal>
+      <h3>Blackjack</h3>
+      <ul>
+        <li>7 spots, up to 3 per player. 6-deck shoe, dealer stands on all 17s.</li>
+        <li>Blackjack pays 3:2. Double, split, insurance, late surrender.</li>
+        <li>One shoe for many rounds, with a cut card; every card is dealt face up.</li>
+      </ul>
+    </div>
+    <div class="rule-card" data-reveal>
+      <h3>AI players</h3>
+      <ul>
+        <li>Bots fill empty seats: 4 per poker table, spots 1–3 in blackjack.</li>
+        <li>Some bots are <b>Claude</b>: an LLM that sees only what its seat sees.</li>
+        <li>Sit down and you replace the bot whose stack is closest to your buy-in.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="panel live tables-live" data-reveal>
+    <div class="live-tag"><span class="lt-on">Live</span><span class="lt-off">Server offline · sample data</span></div>
+    <div class="panel-title">Tables right now
+      <span class="seat-key"><span class="seat h"></span>person</span>
+      <span class="seat-key"><span class="seat ai"></span>AI bot</span>
+      <span class="seat-key"><span class="seat b"></span>bot</span></div>
+    <div id="tables-strip" class="tables-strip"></div>
+  </div>
+</section>
+
+<!-- ============================== 4. State machine: poker ============================== -->
+<section class="slide" data-name="Poker states">
+  <header class="head"><div class="kicker" data-reveal>State machine · poker table</div><h2 data-reveal>Where every poker table is right now</h2></header>
+  <div class="panel live sm-panel" data-reveal>
+    <div class="live-tag"><span class="lt-on">Live</span><span class="lt-off">Server offline · sample data</span></div>
+    <svg id="sm-poker" class="diagram" viewBox="0 0 1712 470" role="img" aria-label="Poker table state machine with live player counts"></svg>
+  </div>
+  <ul class="callouts">
+    <li data-reveal><b>Streets advance</b> when every player still in has acted and the bets are level. If everyone else folds, the hand jumps straight to Hand over.</li>
+    <li data-reveal><b>Hand over → Pre-flop</b> waits for every human to ready up (5 s grace, then their clock runs). Bot-only tables deal once a minute.</li>
+  </ul>
+</section>
+
+<!-- ============================== 5. State machine: blackjack ============================== -->
+<section class="slide" data-name="Blackjack states">
+  <header class="head"><div class="kicker" data-reveal>State machine · blackjack table</div><h2 data-reveal>Where every blackjack table is right now</h2></header>
+  <div class="panel live sm-panel" data-reveal>
+    <div class="live-tag"><span class="lt-on">Live</span><span class="lt-off">Server offline · sample data</span></div>
+    <svg id="sm-blackjack" class="diagram" viewBox="0 0 1712 470" role="img" aria-label="Blackjack table state machine with live player counts"></svg>
+  </div>
+  <ul class="callouts">
+    <li data-reveal><b>Place bets</b> is a 15 s window that closes early once everyone has pressed Deal. A dealer ace opens an 8 s insurance window first.</li>
+    <li data-reveal><b>Round over</b> shows results for 3 s, sweeps the cards to the discard tray, reshuffles past the cut card and opens betting again.</li>
+  </ul>
+</section>
+
+<!-- ============================== 6. Flowchart ============================== -->
+<section class="slide" data-name="Flowchart">
+  <header class="head"><div class="kicker" data-reveal>Flowchart</div><h2 data-reveal>One hand of poker, end to end</h2></header>
+  <div class="panel flow-panel" data-reveal>
+    <svg id="flow" class="diagram" viewBox="0 0 1712 700" role="img" aria-label="Flowchart of a poker hand"></svg>
+  </div>
+</section>
+
+<!-- ============================== 7. AI live ============================== -->
+<section class="slide" data-name="AI players">
+  <header class="head"><div class="kicker" data-reveal>AI players · live</div><h2 data-reveal>Claude is playing with you</h2></header>
+  <div class="pipeline" data-reveal>
+    <span class="pipe">Seat view</span><i>→</i><span class="pipe">Text prompt</span><i>→</i><span class="pipe gold">claude -p <em id="ai-model">claude-haiku-5-5</em></span><i>→</i><span class="pipe">{ type, to }</span><i>→</i><span class="pipe">legalize()</span>
+    <span class="pipe-note">Any failure → rule-based script</span>
+  </div>
+  <div class="panel live ai-stats" data-reveal>
+    <div class="live-tag"><span class="lt-on">Live</span><span class="lt-off">Server offline · sample data</span></div>
+    <div class="ai-stat"><div class="num" id="ai-calls">0</div><div class="lbl">AI decisions</div></div>
+    <div class="ai-stat"><div class="num" id="ai-avg">0</div><div class="lbl">Avg think time</div></div>
+    <div class="ai-stat"><div class="num" id="ai-p95">0</div><div class="lbl">p95</div></div>
+    <div class="ai-stat"><div class="num" id="ai-fb">0</div><div class="lbl">Script fallbacks</div></div>
+    <div class="ai-stat"><div class="num" id="ai-cost">0</div><div class="lbl">Total cost</div></div>
+  </div>
+  <div class="ai-grid">
+    <div class="panel live" data-reveal>
+      <div class="live-tag"><span class="lt-on">Live</span><span class="lt-off">Server offline · sample data</span></div>
+      <div class="panel-title">What the AI chose</div>
+      <div id="ai-actions" class="hbars"></div>
+    </div>
+    <div class="panel live" data-reveal>
+      <div class="live-tag"><span class="lt-on">Live</span><span class="lt-off">Server offline · sample data</span></div>
+      <div class="panel-title">Latest AI decisions</div>
+      <ol id="ai-ticker" class="ticker"></ol>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== 8. Leaderboard & economy ============================== -->
+<section class="slide" data-name="Leaderboard">
+  <header class="head"><div class="kicker" data-reveal>Live · this room</div><h2 data-reveal>Who's winning</h2></header>
+  <div class="lb-grid">
+    <div class="panel live" data-reveal>
+      <div class="live-tag"><span class="lt-on">Live</span><span class="lt-off">Server offline · sample data</span></div>
+      <div class="panel-title">Leaderboard · Dining Dollars (started at $10,000)</div>
+      <div id="leaderboard" class="leaderboard"></div>
+    </div>
+    <div class="lb-side">
+      <div class="panel live conserve" data-reveal>
+        <div class="live-tag"><span class="lt-on">Live</span><span class="lt-off">Server offline · sample data</span></div>
+        <div class="panel-title">Fairness check</div>
+        <div class="cons-eq"><span class="num" id="c-total">$0</span><span class="cons-op" id="c-op">=</span><span class="num muted" id="c-expected">$0</span></div>
+        <div class="cons-status" id="c-status">Conserved</div>
+        <div class="cons-split" id="c-split"></div>
+      </div>
+      <div class="panel live online-panel" data-reveal>
+        <div class="live-tag"><span class="lt-on">Live</span><span class="lt-off">Server offline · sample data</span></div>
+        <div class="panel-title">Players online · last 15 min</div>
+        <div class="ol-row"><span class="num" id="ol-now">0</span><svg id="online-line" viewBox="0 0 800 120" preserveAspectRatio="none"></svg></div>
+      </div>
+      <div class="panel live" data-reveal>
+        <div class="live-tag"><span class="lt-on">Live</span><span class="lt-off">Server offline · sample data</span></div>
+        <div class="panel-title">Latest hands with players</div>
+        <ol id="hands-feed" class="feed"></ol>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== 9. ELEGOO / HootBox ============================== -->
+<section class="slide" data-name="ELEGOO kit">
+  <header class="head"><div class="kicker" data-reveal>ELEGOO kit integration</div><h2 data-reveal>The HootBox: a controller for the table</h2></header>
+  <div class="hb-grid">
+    <div class="panel hb-wiring" data-reveal>
+      <svg id="wiring" class="diagram" viewBox="0 0 940 640" role="img" aria-label="HootBox wiring: KY-040 encoder and two buttons on a MEGA2560"></svg>
+      <div class="legend"><span><i class="sw gold"></i>Signal (INPUT_PULLUP, pressed = LOW)</span><span><i class="sw white"></i>5V</span><span><i class="sw grey"></i>GND</span></div>
+    </div>
+    <div class="hb-side">
+      <div class="panel" data-reveal>
+        <div class="panel-title">Parts used</div>
+        <ul class="parts">
+          <li><b>ELEGOO MEGA2560 R3</b> reads the inputs and reports them over USB</li>
+          <li><b>KY-040 rotary encoder</b> with push switch: the dial</li>
+          <li><b>2 push buttons</b>: A (yes) and B (no)</li>
+          <li>Jumper wires and a USB-B cable</li>
+        </ul>
+      </div>
+      <div class="panel" data-reveal>
+        <div class="panel-title">What each input does</div>
+        <table class="map">
+          <tr><td>Turn dial</td><td>Raise or bet amount · move the highlight</td></tr>
+          <tr><td>Press dial</td><td>Commit the raise or bet</td></tr>
+          <tr><td>A</td><td>Check / call · hit · OK</td></tr>
+          <tr><td>B</td><td>Back · stand</td></tr>
+          <tr><td>Hold B 1 s</td><td>Fold · leave the table</td></tr>
+        </table>
+      </div>
+      <div class="panel proto" data-reveal>
+        <div class="panel-title">Serial protocol · 115200 baud → Web Serial in Chrome</div>
+        <code>HOOTBOX 1</code><code>R+1</code><code>R-1</code><code>P1</code><code>P0</code><code>A1</code><code>A0</code><code>B1</code><code>B0</code>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== 10. Code ============================== -->
+<section class="slide" data-name="Code">
+  <header class="head"><div class="kicker" data-reveal>Code</div><h2 data-reveal>Two pieces that matter</h2></header>
+  <div class="code-grid">
+    <div class="panel code-panel" data-reveal>
+      <div class="code-head"><span class="code-file">hardware/hootbox/hootbox.ino</span><span class="code-what">Firmware · encoder interrupt</span></div>
+      <pre class="code" data-src="code-fw" data-lang="cpp"></pre>
+    </div>
+    <div class="panel code-panel" data-reveal>
+      <div class="code-head"><span class="code-file">apps/server/src/ai/LlmStrategy.ts</span><span class="code-what">Server · one AI decision</span></div>
+      <pre class="code" data-src="code-llm" data-lang="ts"></pre>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== 11. GitHub + itcan.do ============================== -->
+<section class="slide" data-name="Repo & itcan.do">
+  <header class="head"><div class="kicker" data-reveal>Source · itcan.do</div><h2 data-reveal>Open source, and an admin you can talk to</h2></header>
+  <div class="gh-grid">
+    <div class="panel gh" data-reveal>
+      <div class="panel-title">GitHub repository</div>
+      <div class="gh-url">github.com/BigJella/owl-in</div>
+      <div class="gh-stats">
+        <div><span class="num">{{commits}}</span><span class="lbl">Commits</span></div>
+        <div><span class="num">{{tests}}</span><span class="lbl">Tests</span></div>
+        <div><span class="num">{{tsLines}}</span><span class="lbl">Lines of TS</span></div>
+        <div><span class="num">{{files}}</span><span class="lbl">Files</span></div>
+      </div>
+      <table class="tree">
+        <tr><td>apps/client</td><td>React + PixiJS table, lobby, career, admin panel</td></tr>
+        <tr><td>apps/server</td><td>Express + Socket.IO rooms, bots, Claude, admin API</td></tr>
+        <tr><td>packages/game-engine</td><td>Pure poker and blackjack rules, fully tested</td></tr>
+        <tr><td>packages/shared</td><td>Types shared by client and server</td></tr>
+        <tr><td>hardware/hootbox</td><td>ELEGOO firmware (Arduino)</td></tr>
+        <tr><td>it/owl-live</td><td>The itcan.do live page</td></tr>
+      </table>
+      <div class="gh-run"><code>npm install</code><code>npm run dev</code><span>then open http://&lt;pc-ip&gt;:5173</span></div>
+    </div>
+    <div class="panel it-panel live" data-reveal>
+      <div class="live-tag"><span class="lt-on">Live</span><span class="lt-off">Server offline · sample data</span></div>
+      <div class="panel-title">itcan.do · "OWL IN Live"</div>
+      <p class="it-blurb">A chat page for the organizers. Ask about the game in plain English; Claude Code answers from the management API with text and charts that keep updating.</p>
+      <div class="it-chat">
+        <div class="it-msg user">Who's up the most right now?</div>
+        <div class="it-msg claude"><span id="it-answer">Maya is up $2,480, ahead of Jordan at +$1,360.</span>
+          <div id="it-chart" class="it-chart"></div>
+        </div>
+        <div class="it-msg user">Add another $5/$10 table.</div>
+        <div class="it-msg claude">I'll open a new poker table at $5/$10 with 4 bots, 2 of them AI.
+          <div class="it-confirm"><span class="it-btn primary">Create table</span><span class="it-btn">Cancel</span></div>
+        </div>
+      </div>
+      <div class="it-flow">Game server <i>→</i> <code>npm run it:live</code> <i>→</i> <code>it patch</code> every 2 s <i>→</i> page <i>↔</i> Claude Code</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== 12. Limitations & challenges ============================== -->
+<section class="slide" data-name="Limitations">
+  <header class="head"><div class="kicker" data-reveal>Honest notes</div><h2 data-reveal>Limitations and challenges</h2></header>
+  <div class="cols-2 lc">
+    <div class="rule-card" data-reveal>
+      <h3>Limitations</h3>
+      <ul>
+        <li><b>Everything lives in memory.</b> Restarting the server resets bankrolls, careers and names.</li>
+        <li><b>The HootBox only works on the server PC</b> in Chrome or Edge: Web Serial needs localhost (or HTTPS).</li>
+        <li><b>Blackjack bots aren't AI yet.</b> They play basic strategy; only the poker bots use the LLM.</li>
+        <li><b>AI think time is 2–6 s</b> per decision, and every call costs a little money.</li>
+      </ul>
+    </div>
+    <div class="rule-card" data-reveal>
+      <h3>Challenges</h3>
+      <ul>
+        <li><b>Browsers froze</b> after a few table visits: every page made a new WebGL context. Fix: one shared PixiJS app.</li>
+        <li><b>Fair AI:</b> the LLM gets exactly the seat's view. Hidden cards never leave the server.</li>
+        <li><b>Every chip accounted for</b> across bankrolls, tables, bots and the house bank, checked live.</li>
+        <li><b>Timing</b> clocks and ready-up around animations so nobody loses time watching chips fly.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== 13. Tools & resources (must stay last) ============================== -->
+<section class="slide" data-name="Tools">
+  <header class="head"><div class="kicker" data-reveal>Tools and resources</div><h2 data-reveal>What it's built with</h2></header>
+  <div class="tools">
+    <div class="tool-group" data-reveal><h3>Language &amp; runtime</h3><ul><li>TypeScript {{v:typescript}}</li><li>Node.js {{v:node}}</li><li>npm workspaces</li><li>tsx {{v:tsx}}</li></ul></div>
+    <div class="tool-group" data-reveal><h3>Client</h3><ul><li>React {{v:react}}</li><li>Vite {{v:vite}}</li><li>PixiJS {{v:pixi.js}}</li><li>GSAP {{v:gsap}}</li><li>Socket.IO client {{v:socket.io-client}}</li><li>Inter &amp; Oswald (Fontsource)</li></ul></div>
+    <div class="tool-group" data-reveal><h3>Server &amp; rules</h3><ul><li>Express {{v:express}}</li><li>Socket.IO {{v:socket.io}}</li><li>Zod {{v:zod}}</li><li>pokersolver {{v:pokersolver}}</li></ul></div>
+    <div class="tool-group" data-reveal><h3>AI</h3><ul><li>Claude Code CLI (headless)</li><li>Claude Haiku</li><li>Claude Code (pair programming)</li></ul></div>
+    <div class="tool-group" data-reveal><h3>Hardware</h3><ul><li>ELEGOO MEGA2560 R3 kit</li><li>KY-040 rotary encoder</li><li>Arduino IDE / arduino-cli</li><li>Web Serial API</li></ul></div>
+    <div class="tool-group" data-reveal><h3>Testing &amp; ops</h3><ul><li>Vitest {{v:vitest}}</li><li>Puppeteer + Chrome</li><li>itcan.do (It)</li><li>Git &amp; GitHub</li><li>qrcode-generator (this deck)</li></ul></div>
+    <div class="tool-group resources" data-reveal><b>Resources</b>Docs for every library above, MDN (Web Serial API), the Arduino language reference, the KY-040 and MEGA2560 pinouts, and the Claude Code CLI docs.</div>
+  </div>
+</section>
+
+<footer id="foot">
+  <span class="foot-brand">OWL IN · KSU Card Club</span>
+  <span class="foot-count"><span id="foot-n">01</span> / <span id="foot-total">13</span></span>
+  <div id="progress"><div id="progress-bar"></div></div>
+</footer>
+
+</main>
+</div>
+
+<!-- Code shown on the "Code" slide (excerpts, comments added for the presentation). -->
+<script type="text/plain" id="code-fw">// Quadrature state table: index = (previous << 2) | current,
+// where state = (CLK << 1) | DT. A valid step counts ±1;
+// no change or a missed edge (both pins at once) counts 0.
+const int8_t QUAD_TABLE[16] = {
+   0, -1, +1,  0,
+  +1,  0,  0, -1,
+  -1,  0,  0, +1,
+   0, +1, -1,  0,
+};
+
+// Interrupt on every CLK (D2) or DT (D3) edge.
+// It only counts: an ISR must never print to Serial.
+void onEncoderEdge() {
+  uint8_t now = readEncoder();
+  uint8_t prev = encState;
+  if (now == prev) return;
+  encState = now;
+  encSub += QUAD_TABLE[(prev << 2) | now];
+
+  // One click (detent) ends where both pins rest HIGH.
+  // 3 of its 4 steps are enough, then resync, so a fast
+  // turn never skips or double-counts a click.
+  if (now != 0b11) return;
+  if (encSub >= 3) encPending++;        // clockwise
+  else if (encSub <= -3) encPending--;  // counter-clockwise
+  encSub = 0;
+}
+// loop() sends encPending as "R+1" / "R-2" over serial.</script>
+
+<script type="text/plain" id="code-llm">// One AI decision. `view` is exactly what a human in
+// this seat would see: never another player's cards.
+async decide(view: PokerTableView, signal: AbortSignal) {
+  try {
+    // Seat view → plain text: own cards, board, stacks,
+    // bets and every action so far this hand.
+    const prompt = buildPrompt(view);
+
+    // Headless Claude Code: claude -p --model <haiku>
+    //   --json-schema <{type, to}> --tools ""
+    const reply = await this.complete(prompt, signal);
+
+    // Parse {type: "raise", to: 60}, then clamp it to
+    // a legal move (min raise, all-in, can't check...).
+    return legalize(view, parseAction(reply.text));
+  } catch (error) {
+    // The turn already ended: nobody is waiting.
+    if (signal.aborted) throw error;
+    // CLI missing, timeout or bad JSON: the
+    // rule-based script decides instead.
+    return this.fallback.decide(view, signal);
+  }
+}</script>
+
+<script>/*@qrcode*/</script>
+<script>/*@sample*/</script>
+<script>/*@deck*/</script>
+</body>
+</html>

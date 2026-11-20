@@ -1,5 +1,7 @@
 import express, { Router, type Request, type Response } from "express";
+import { networkInterfaces } from "node:os";
 import { z } from "zod";
+import type { AdminNetwork } from "@owl-in/shared";
 import { AdminError, type AdminService } from "./AdminService";
 import { adminGuard } from "./security";
 
@@ -72,6 +74,23 @@ const handle = (fn: (request: Request) => unknown) => (request: Request, respons
 
 const param = (request: Request, name: string) => String(request.params[name] ?? "");
 
+/** Adapters that are rarely the LAN everyone else is on (Hyper-V/WSL, VirtualBox, VMware, VPNs, Docker). */
+const VIRTUAL_ADAPTER = /vEthernet|WSL|VirtualBox|VMware|Hyper-V|Loopback|Docker|tailscale|ZeroTier|vpn|utun|tun\d|bridge/i;
+const PRIVATE_IPV4 = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/;
+
+/** This computer's LAN addresses, likeliest first (for the presentation's join slide). */
+export function lanAddresses(): string[] {
+  const found: { address: string; score: number }[] = [];
+  for (const [name, entries] of Object.entries(networkInterfaces())) {
+    for (const entry of entries ?? []) {
+      if (entry.family !== "IPv4" || entry.internal || entry.address.startsWith("169.254.")) continue;
+      const score = (VIRTUAL_ADAPTER.test(name) ? 2 : 0) + (PRIVATE_IPV4.test(entry.address) ? 0 : 1);
+      found.push({ address: entry.address, score });
+    }
+  }
+  return found.sort((a, b) => a.score - b.score).map((f) => f.address);
+}
+
 /** The management API, mounted at /api/admin (localhost only). See CLAUDE.md "Management API". */
 export function adminRoutes(admin: AdminService): Router {
   const router = Router();
@@ -79,6 +98,7 @@ export function adminRoutes(admin: AdminService): Router {
   router.use(express.json({ limit: "16kb" }));
 
   router.get("/snapshot", handle(() => admin.snapshot()));
+  router.get("/network", handle((): AdminNetwork => ({ addresses: lanAddresses(), clientPort: 5173 })));
   router.get("/tables", handle(() => admin.tables()));
   router.get("/tables/:id", handle((r) => admin.table(param(r, "id"))));
   router.post("/tables", handle((r) => admin.createTable(body(createSchema, r))));

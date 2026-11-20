@@ -1,6 +1,8 @@
 import express from "express";
 import cors from "cors";
 import { createServer } from "node:http";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { Server } from "socket.io";
 import { HouseBank } from "./economy/HouseBank";
 import { PlayerRegistry } from "./players/PlayerRegistry";
@@ -94,6 +96,14 @@ app.use("/api/admin", adminRoutes(admin));
 app.use(cors());
 app.use(express.json());
 
+// The hackathon presentation (one self-contained file, built by `npm run present:build`). Served from here so it is
+// same-origin with the management API and can show live data; opened from disk it falls back to sample data.
+const PRESENTATION = resolve(import.meta.dirname, "../../../presentation/owl-in.html");
+app.get("/present", (_request, response) => {
+  if (existsSync(PRESENTATION)) response.sendFile(PRESENTATION);
+  else response.status(404).send("Build the presentation first: npm run present:build");
+});
+
 app.get("/health", (_request, response) => {
   response.json({ status: "ok", playersOnline: registry.onlineCount(), rooms: rooms.list(), blackjack: blackjack.list() });
 });
@@ -103,4 +113,5 @@ io.on("connection", (socket) => registerConnection(socket, { registry, rooms, bl
 const port = Number(process.env.PORT ?? 3000);
 httpServer.listen(port, "0.0.0.0", () => {
   console.log(`OWL IN server listening on http://localhost:${port} (admin API: /api/admin, this computer only)`);
+  console.log(`Presentation (live data): http://localhost:${port}/present`);
 });

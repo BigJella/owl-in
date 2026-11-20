@@ -94,6 +94,7 @@ TypeScript monorepo with npm workspaces. Node 26, npm 12, Windows (bash + PowerS
 | `OWL_LLM_BOTS=0 npm run dev` | Same, with no AI bots on new tables (see **LLM bots** below); env vars override `.env` for one run |
 | `npm run it:live` | itcan.do bridge: feeds the `owl-live` chat page's live data from the management API every 2s (see **Management API**) |
 | `node scripts/generate-placeholder-cards.mjs` | Regenerates placeholder card/chip SVGs into `apps/client/public/assets` |
+| `npm run present:build` | Builds the hackathon deck `presentation/owl-in.html` from `presentation/src/` (see **Presentation**) |
 
 - **Server settings live in `apps/server/.env`** (git-ignored; copy `apps/server/.env.example`). The server's `dev` / `start`
   scripts load it with `--env-file-if-exists`; real environment variables win. `.env` only holds machine settings and the
@@ -176,7 +177,10 @@ packages/
     src/admin.ts              Management API types (AdminSnapshot, AdminTable/Seat/Player/Timeout, LlmStats, TableSettings)
     src/career.ts             PokerStats, BlackjackStats, TableSession, hand records, CareerView, LeaderboardRow
     src/events.ts             ClientToServerEvents / ServerToClientEvents (Socket.IO generics on both ends)
-scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), it-live.mjs (itcan.do bridge), generate-placeholder-cards.mjs
+scripts/                      bots.mjs, blackjack-bots.mjs (e2e smokes), it-live.mjs (itcan.do bridge), generate-placeholder-cards.mjs,
+                              build-presentation.mjs (inlines the deck into one file)
+presentation/src/             The hackathon deck's sources: deck.html (slides), deck.css, deck.js, sample-data.js, vendor/qrcode.js
+presentation/owl-in.html      The built, self-contained deck (committed; the file uploaded for the judges)
 it/owl-live/index.html        The itcan.do chat query page (live stats strip, chat, live chart specs), fed by it-live.mjs
 hardware/hootbox/            HootBox firmware (Arduino sketch + README) for the MEGA2560 controller (see **HootBox**)
 ```
@@ -455,9 +459,6 @@ hardware/hootbox/            HootBox firmware (Arduino sketch + README) for the 
 - [ ] Blackjack: the canvas is small at phone width (sidebar controls are the primary UI there); consider a phone-specific layout
 - [ ] Blackjack: 3:2 is verified by tests. If it looks wrong in play, check for insured blackjacks (even money) or 21 after a split (pays 1:1)
 - [ ] Blackjack: insurance and split flows are covered by engine/room tests but were not screenshot-checked in a browser
-- [ ] **HootBox:** flash `hardware/hootbox/` and do a full test with the real board (the firmware compiles but hasn't run
-      on hardware yet; the browser side was tested with `hootBox.emit`). Check the CW direction and steps per detent
-      (`OWL_REVERSE` / `OWL_HALF_STEP` in the sketch)
 
 ---
 
@@ -471,6 +472,7 @@ header `X-Owl-Admin: 1`**. Responses never contain browser tokens, IPs or hidden
 |---|---|
 | `GET /snapshot` | Everything: totals (with `conserved`), tables + seats, players, timeouts, LLM stats |
 | `GET /tables`, `/tables/:id`, `/players`, `/timeouts`, `/llm?limit=` | Parts of the snapshot (`/llm` has up to 500 decisions) |
+| `GET /network` | This PC's LAN IPv4 addresses, likeliest first (virtual adapters last), and the client port (the deck's join slide) |
 | `GET /log` | The event log, newest first: `?kinds=hand,llm,admin&game=&tableId=&playerId=&q=&humansOnly=1&before=&after=&limit=` (≤500). Returns `{entries, more, counts}` |
 | `POST /tables` | `{game, name, bigBlind \| minBet, maxBots?, maxAi?}` |
 | `PATCH /tables/:id` | `{maxBots?, maxAi?}` |
@@ -575,13 +577,30 @@ only arrive while that session is open.
 - **Moderation from the chat** ("kick Sam", "ban X", the Clear button): always through the Confirm / Cancel buttons above.
 - It state lives on It's service and is shown on TVs/phones: never put tokens, IPs or hole cards in it.
 
+## Presentation (hackathon deck)
+
+`presentation/owl-in.html` is the 5-minute deck for the IEEE CS Game Sprint and itcan.do tracks: **one self-contained
+file** (fonts, scripts, QR encoder and sample data inlined; no external requests besides the API) so it can be uploaded to
+Google Drive. Edit `presentation/src/`, then run `npm run present:build` (it also fills in the repo stats and versions).
+- **Live:** present from `http://localhost:3000/present` (the game server serves the built file, same origin as the
+  management API). It polls `/snapshot` every 2 s and `/llm`, `/log`, `/network` every 4 s.
+- **Offline** (opened from disk / Drive, or the server is down): every live panel shows **"Server offline · sample data"**
+  at its top right and uses `sample-data.js` (consistent totals). It switches back by itself when the server returns.
+- Slides: title (presenter: Yusuf Abdulahi), join (`http://<LAN IP>:5173` + QR; IP from
+  `/network`, `?join=` or click to edit), overview + rules, poker and blackjack **state machines with live player counts
+  per stage** (from each table's `stage` label), flowchart, live AI, live leaderboard + chip conservation, HootBox wiring,
+  code, GitHub + itcan.do, limitations & challenges, **tools & resources last** (an IEEE rule).
+- Same design language as the site (sharp, flat, black & gold); a fixed 1920×1080 stage scaled to the window.
+  Keys: ←/→, Space, Home/End, F = fullscreen.
+
 ## HootBox (hardware controller)
 
 A physical controller for the player on the **server PC**: a rotary dial with a push switch plus two buttons, on an
 Arduino-compatible board, sending input over USB serial. The browser reads it with **Web Serial** and drives the table
 controls. **Status:** the browser side (`apps/client/src/hardware/`) and the firmware (`hardware/hootbox/`, compiled with
 `arduino-cli compile --fqbn arduino:avr:mega hardware/hootbox`; the IDE bundles arduino-cli) are built against the
-contract below; neither has been tested on the real board yet. Arduino gotcha: the IDE generates function prototypes
+contract below, and run on the real board (if the dial direction or steps per detent ever look wrong,
+see `OWL_REVERSE` / `OWL_HALF_STEP` in the sketch). Arduino gotcha: the IDE generates function prototypes
 above struct definitions, so sketch functions shouldn't take the sketch's own struct types as parameters. Keyboard, mouse and touch keep working; **nothing changes on the server.**
 
 **Scope:** Chrome or Edge only (Web Serial). The page must be a secure context, so only **`http://localhost:5173` on the
