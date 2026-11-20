@@ -1,26 +1,26 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { dial, type DialHandler } from "./dial";
-import type { DialEvent } from "./dialProtocol";
+import { hootBox, type HootBoxHandler } from "./hootbox";
+import type { HootBoxEvent } from "./hootboxProtocol";
 
 /** Dialogs win over table panels, which win over the page. */
-export const DIAL_PRIORITY = { page: 0, panel: 1, dialog: 2 } as const;
+export const HOOTBOX_PRIORITY = { page: 0, panel: 1, dialog: 2 } as const;
 
-export function useDialStatus() {
-  return useSyncExternalStore(dial.subscribeStatus, dial.getStatus);
+export function useHootBoxStatus() {
+  return useSyncExternalStore(hootBox.subscribeStatus, hootBox.getStatus);
 }
 
-/** Is a dial connected? Highlights (`.dial-focus`) are only drawn then. */
-export function useDialConnected() {
-  return useDialStatus() === "connected";
+/** Is a HootBox connected? Highlights (`.hootbox-focus`) are only drawn then. */
+export function useHootBoxConnected() {
+  return useHootBoxStatus() === "connected";
 }
 
-/** Receive dial events while `active`. The latest handler is always used, so closures never go stale. */
-export function useDial(handler: DialHandler, priority: number, active = true) {
+/** Receive HootBox events while `active`. The latest handler is always used, so closures never go stale. */
+export function useHootBox(handler: HootBoxHandler, priority: number, active = true) {
   const ref = useRef(handler);
   ref.current = handler;
   useEffect(() => {
     if (!active) return;
-    return dial.on((event) => ref.current(event), priority);
+    return hootBox.on((event) => ref.current(event), priority);
   }, [priority, active]);
 }
 
@@ -34,7 +34,7 @@ export function useHoldState() {
     holding,
     start: () => setHolding(true),
     /** Pass every event through this; it clears the hold on `holdEnd`. */
-    track: (event: DialEvent) => {
+    track: (event: HootBoxEvent) => {
       if (event.kind === "holdEnd") setHolding(false);
     },
   };
@@ -57,7 +57,7 @@ export function stepIndex(enabled: boolean[], from: number, steps: number): numb
  * A highlight that the dial moves over a list of entries. Returns the focused index (-1 when nothing is enabled) and
  * `move(steps)` for `turn`. If the focused entry becomes disabled it falls back to the first enabled one from `initial`.
  */
-export function useDialMenu(enabled: boolean[], initial = 0) {
+export function useHootBoxMenu(enabled: boolean[], initial = 0) {
   const [index, setIndex] = useState(initial);
   const fallback = () => {
     for (let i = initial; i < enabled.length; i += 1) if (enabled[i]) return i;

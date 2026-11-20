@@ -14,7 +14,7 @@ import { ClockBlock, useNow, type Clock } from "../components/ClockBlock";
 import { BlackjackScene } from "../game/blackjack/BlackjackScene";
 import { useBlackjackState, type ReceivedBlackjack } from "../networking/blackjackStore";
 import { socket } from "../networking/socket";
-import { DIAL_PRIORITY, stepIndex, useDial, useDialConnected, useDialMenu, useHoldState } from "../hardware/useDial";
+import { HOOTBOX_PRIORITY, stepIndex, useHootBox, useHootBoxConnected, useHootBoxMenu, useHoldState } from "../hardware/useHootBox";
 
 const fmt = formatDD;
 const seconds = (ms: number) => Math.max(0, Math.ceil(ms / 1000));
@@ -166,10 +166,10 @@ export function BlackjackTablePage({ onLeave, playerName }: { onLeave: () => voi
     else setConfirmLeave(true);
   }
 
-  // Owl Dial, page level: hold B = leave the table (panels claim it first, e.g. to leave just one seat).
+  // HootBox, page level: hold B = leave the table (panels claim it first, e.g. to leave just one seat).
   const leaveHold = useHoldState();
   const canLeave = view !== null && view.leaveMode !== "queued";
-  useDial(
+  useHootBox(
     (event) => {
       leaveHold.track(event);
       if (event.kind === "holdStart" && canLeave) {
@@ -182,10 +182,10 @@ export function BlackjackTablePage({ onLeave, playerName }: { onLeave: () => voi
       }
       return false;
     },
-    DIAL_PRIORITY.page,
+    HOOTBOX_PRIORITY.page,
   );
   // The "Leave after this round" dialog: A = leave, B = stay. Modal.
-  useDial(
+  useHootBox(
     (event) => {
       if (event.kind === "a") {
         setConfirmLeave(false);
@@ -194,7 +194,7 @@ export function BlackjackTablePage({ onLeave, playerName }: { onLeave: () => voi
       if (event.kind === "b") setConfirmLeave(false);
       return true;
     },
-    DIAL_PRIORITY.dialog,
+    HOOTBOX_PRIORITY.dialog,
     confirmLeave && view?.leaveMode === "after-hand",
   );
 
@@ -339,9 +339,9 @@ function BetPanel(props: {
   /** Nothing to change: the amount is already this spot's bet. */
   const unchanged = currentBet > 0 && amount === currentBet;
 
-  // Owl Dial: step 1 turn = highlight a seat (then Deal), A = choose it / deal; step 2 turn = amount, press = bet,
+  // HootBox: step 1 turn = highlight a seat (then Deal), A = choose it / deal; step 2 turn = amount, press = bet,
   // B = back. Hold B on your own seat = leave just that seat.
-  const dialOn = useDialConnected();
+  const hootBoxOn = useHootBoxConnected();
   const [step, setStep] = useState<"seat" | "amount">("seat");
   const [dealFocused, setDealFocused] = useState(false);
   const spotHold = useHoldState();
@@ -353,7 +353,7 @@ function BetPanel(props: {
   };
   const canDeal = hasBets && !view.amReady;
   const betDisabled = selected === null || !affordable || atCap || takenByHuman || blockedSpot || unchanged;
-  useDial(
+  useHootBox(
     (event) => {
       spotHold.track(event);
       switch (event.kind) {
@@ -398,12 +398,12 @@ function BetPanel(props: {
           return false;
       }
     },
-    DIAL_PRIORITY.panel,
+    HOOTBOX_PRIORITY.panel,
   );
   useEffect(() => {
     if (!canDeal) setDealFocused(false);
   }, [canDeal]);
-  const seatFocus = dialOn && step === "seat";
+  const seatFocus = hootBoxOn && step === "seat";
 
   // Selecting a spot you've bet on shows its bet in the amount box and slider.
   useEffect(() => {
@@ -429,7 +429,7 @@ function BetPanel(props: {
           return (
             <button
               key={i}
-              className={`spot-btn ${selected === i ? "selected" : ""} ${seatFocus && !dealFocused && selected === i ? "dial-focus" : ""} ${isMine ? "mine" : ""} ${s?.kind === "bot" ? "bot" : ""}`}
+              className={`spot-btn ${selected === i ? "selected" : ""} ${seatFocus && !dealFocused && selected === i ? "hootbox-focus" : ""} ${isMine ? "mine" : ""} ${s?.kind === "bot" ? "bot" : ""}`}
               disabled={blocked}
               onClick={() => onSelect(i)}
               title={
@@ -494,7 +494,7 @@ function BetPanel(props: {
           />
         </label>
         <button
-          className={`action raise amount-btn ${dialOn && step === "amount" ? "dial-focus" : ""}`}
+          className={`action raise amount-btn ${hootBoxOn && step === "amount" ? "hootbox-focus" : ""}`}
           disabled={betDisabled}
           onClick={() => placeBet()}
         >
@@ -527,7 +527,7 @@ function BetPanel(props: {
           <span className="bj-ready tag gold">✓ Ready</span>
         ) : (
           <button
-            className={`action raise ${seatFocus && dealFocused ? "dial-focus" : ""}`}
+            className={`action raise ${seatFocus && dealFocused ? "hootbox-focus" : ""}`}
             disabled={!hasBets}
             onClick={() => socket.emit("blackjack:ready")}
           >
@@ -540,13 +540,13 @@ function BetPanel(props: {
 }
 
 function InsurancePanel({ cost, hands, blackjack }: { cost: number; hands: number; blackjack: boolean }) {
-  // Owl Dial: A = insure, B = no.
-  useDial((event) => {
+  // HootBox: A = insure, B = no.
+  useHootBox((event) => {
     if (event.kind === "a") socket.emit("blackjack:insurance", true);
     else if (event.kind === "b") socket.emit("blackjack:insurance", false);
     else return false;
     return true;
-  }, DIAL_PRIORITY.panel);
+  }, HOOTBOX_PRIORITY.panel);
   return (
     <div className="ready-panel">
       <div>
@@ -597,7 +597,7 @@ function SpotRelease({ view }: { view: BlackjackTableView }) {
 
 const PLAY_ORDER: BlackjackAction[] = ["hit", "stand", "double", "split", "surrender"];
 /** What the dial highlights on your turn (Stand is always B). */
-const DIAL_ACTIONS: BlackjackAction[] = ["hit", "double", "split", "surrender"];
+const HOOTBOX_ACTIONS: BlackjackAction[] = ["hit", "double", "split", "surrender"];
 
 /** Hit / Stand / Double / Split / Surrender: always all five, in fixed slots, disabled when not allowed. */
 function PlayPanel({ view }: { view: BlackjackTableView }) {
@@ -607,20 +607,20 @@ function PlayPanel({ view }: { view: BlackjackTableView }) {
   const hand = spot.hands[ref.hand]!;
   const act = (action: BlackjackAction) => socket.emit("blackjack:act", action);
 
-  // Owl Dial: turn = highlight Hit / Double / Split / Surrender (starts on Hit), A = do it, B = stand.
-  const dialOn = useDialConnected();
-  const menu = useDialMenu(DIAL_ACTIONS.map((a) => legal[a]));
+  // HootBox: turn = highlight Hit / Double / Split / Surrender (starts on Hit), A = do it, B = stand.
+  const hootBoxOn = useHootBoxConnected();
+  const menu = useHootBoxMenu(HOOTBOX_ACTIONS.map((a) => legal[a]));
   useEffect(() => menu.reset(), [ref.spot, ref.hand]);
-  useDial((event) => {
+  useHootBox((event) => {
     if (event.kind === "turn") menu.move(event.steps);
     else if (event.kind === "a") {
-      if (menu.focused >= 0) act(DIAL_ACTIONS[menu.focused]!);
+      if (menu.focused >= 0) act(HOOTBOX_ACTIONS[menu.focused]!);
     } else if (event.kind === "b") {
       if (legal.stand) act("stand");
     } else return false;
     return true;
-  }, DIAL_PRIORITY.panel);
-  const dialAction = dialOn && menu.focused >= 0 ? DIAL_ACTIONS[menu.focused] : null;
+  }, HOOTBOX_PRIORITY.panel);
+  const hootBoxAction = hootBoxOn && menu.focused >= 0 ? HOOTBOX_ACTIONS[menu.focused] : null;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -643,7 +643,7 @@ function PlayPanel({ view }: { view: BlackjackTableView }) {
         {PLAY_ORDER.map((action) => (
           <button
             key={action}
-            className={`action bj-${action} ${action === "hit" ? "raise" : ""} ${dialAction === action ? "dial-focus" : ""}`}
+            className={`action bj-${action} ${action === "hit" ? "raise" : ""} ${hootBoxAction === action ? "hootbox-focus" : ""}`}
             disabled={!legal[action]}
             onClick={() => act(action)}
           >

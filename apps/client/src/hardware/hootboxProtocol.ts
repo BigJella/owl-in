@@ -1,18 +1,18 @@
 /**
- * Owl Dial serial protocol v1 (see "Owl Dial" in CLAUDE.md) and the gesture layer that turns raw
+ * HootBox serial protocol v1 (see "HootBox" in CLAUDE.md) and the gesture layer that turns raw
  * key-down / key-up lines into what the UI uses (taps, a 1 s hold on B, accelerated turns). Pure: no Web Serial here.
  */
 
-export type DialKey = "P" | "A" | "B";
+export type HootBoxKey = "P" | "A" | "B";
 
-export type RawDialEvent = { type: "turn"; steps: number } | { type: "key"; key: DialKey; down: boolean } | { type: "hello"; version: number };
+export type RawHootBoxEvent = { type: "turn"; steps: number } | { type: "key"; key: HootBoxKey; down: boolean } | { type: "hello"; version: number };
 
 /**
  * What the UI receives.
  * - `holdStart` / `holdEnd`: B went down / the hold is over (released or fired). Used to draw the hold bar.
  *   `holdEnd` is broadcast to every handler; the others go to the first handler that consumes them.
  */
-export type DialEvent =
+export type HootBoxEvent =
   | { kind: "turn"; steps: number }
   | { kind: "press" }
   | { kind: "a" }
@@ -21,15 +21,15 @@ export type DialEvent =
   | { kind: "holdStart" }
   | { kind: "holdEnd" };
 
-export const DIAL_HOLD_MS = 1000;
+export const HOOTBOX_HOLD_MS = 1000;
 /** Detents closer together than this count as a fast turn. */
-export const DIAL_FAST_MS = 40;
-export const DIAL_FAST_FACTOR = 5;
+export const HOOTBOX_FAST_MS = 40;
+export const HOOTBOX_FAST_FACTOR = 5;
 
 /** One line of protocol v1, or null for anything else (blank lines, noise, unknown commands). */
-export function parseDialLine(line: string): RawDialEvent | null {
+export function parseHootBoxLine(line: string): RawHootBoxEvent | null {
   const text = line.trim();
-  const hello = /^OWL-DIAL (\d+)$/.exec(text);
+  const hello = /^HOOTBOX (\d+)$/.exec(text);
   if (hello) return { type: "hello", version: Number(hello[1]) };
   const turn = /^R([+-]\d{1,3})$/.exec(text);
   if (turn) {
@@ -37,7 +37,7 @@ export function parseDialLine(line: string): RawDialEvent | null {
     return steps === 0 ? null : { type: "turn", steps };
   }
   const key = /^([PAB])([01])$/.exec(text);
-  if (key) return { type: "key", key: key[1] as DialKey, down: key[2] === "1" };
+  if (key) return { type: "key", key: key[1] as HootBoxKey, down: key[2] === "1" };
   return null;
 }
 
@@ -58,11 +58,11 @@ export function createLineSplitter(onLine: (line: string) => void) {
 }
 
 /**
- * Turns raw events into gestures. Press, A and B fire on release; holding B for `DIAL_HOLD_MS` fires `holdB` once
+ * Turns raw events into gestures. Press, A and B fire on release; holding B for `HOOTBOX_HOLD_MS` fires `holdB` once
  * (while still held) and swallows that release. Fast turns are multiplied.
  */
-export function createGestures(emit: (event: DialEvent) => void, now: () => number = Date.now) {
-  const down = new Set<DialKey>();
+export function createGestures(emit: (event: HootBoxEvent) => void, now: () => number = Date.now) {
+  const down = new Set<HootBoxKey>();
   let holdTimer: ReturnType<typeof setTimeout> | null = null;
   let holdFired = false;
   let lastTurn = -Infinity;
@@ -72,13 +72,13 @@ export function createGestures(emit: (event: DialEvent) => void, now: () => numb
     holdTimer = null;
   };
 
-  function feed(event: RawDialEvent) {
+  function feed(event: RawHootBoxEvent) {
     if (event.type === "hello") return;
     if (event.type === "turn") {
       const t = now();
-      const fast = t - lastTurn < DIAL_FAST_MS;
+      const fast = t - lastTurn < HOOTBOX_FAST_MS;
       lastTurn = t;
-      emit({ kind: "turn", steps: fast ? event.steps * DIAL_FAST_FACTOR : event.steps });
+      emit({ kind: "turn", steps: fast ? event.steps * HOOTBOX_FAST_FACTOR : event.steps });
       return;
     }
     const { key } = event;
@@ -93,7 +93,7 @@ export function createGestures(emit: (event: DialEvent) => void, now: () => numb
           holdFired = true;
           emit({ kind: "holdEnd" });
           emit({ kind: "holdB" });
-        }, DIAL_HOLD_MS);
+        }, HOOTBOX_HOLD_MS);
       }
       return;
     }

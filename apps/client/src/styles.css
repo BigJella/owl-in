@@ -116,19 +116,19 @@ h1, h2, h3, .display { font-family: var(--display); text-transform: uppercase; f
 .name-editor-msg { margin: 0; font-size: 12px; color: var(--danger); }
 .chip-balance { margin-left: auto; display: flex; align-items: center; gap: 12px; }
 
-/* Owl Dial (hardware controller) */
-.nav-dial { margin-left: auto; margin-right: 24px; width: 158px; display: flex; justify-content: flex-end; }
-.nav-dial + .chip-balance { margin-left: 0; }
-.nav-dial .secondary { height: 32px; padding: 0 12px; font-size: 12px; letter-spacing: 1.5px; }
-.nav-dial-on {
+/* HootBox (hardware controller) */
+.nav-hootbox { margin-left: auto; margin-right: 24px; width: 168px; display: flex; justify-content: flex-end; }
+.nav-hootbox + .chip-balance { margin-left: 0; }
+.nav-hootbox .secondary { height: 32px; padding: 0 12px; font-size: 12px; letter-spacing: 1.5px; }
+.nav-hootbox-on {
   display: flex; align-items: center; gap: 8px; color: var(--muted);
   font-family: var(--display); font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase;
 }
-.nav-dial-on i { width: 7px; height: 7px; background: var(--gold); }
-.nav-dial-on button { border: 0; background: none; padding: 0 2px; color: var(--muted); font-size: 15px; line-height: 1; }
-.nav-dial-on button:hover { color: var(--gold); }
+.nav-hootbox-on i { width: 7px; height: 7px; background: var(--gold); }
+.nav-hootbox-on button { border: 0; background: none; padding: 0 2px; color: var(--muted); font-size: 15px; line-height: 1; }
+.nav-hootbox-on button:hover { color: var(--gold); }
 /* What the dial / A will trigger. Flat 1px gold outline, no glow. */
-.dial-focus { outline: 1px solid var(--gold); outline-offset: 2px; }
+.hootbox-focus { outline: 1px solid var(--gold); outline-offset: 2px; }
 /* B-hold progress: a flat bar filling along the bottom of the target button over 1 s. */
 .has-hold { position: relative; overflow: hidden; }
 .hold-fill { position: absolute; left: 0; bottom: 0; height: 3px; width: 0; background: var(--muted); animation: hold-fill 1s linear forwards; pointer-events: none; }
@@ -569,8 +569,8 @@ input[type=range] { accent-color: var(--gold); width: 100%; }
 .bj-history { display: flex; flex-direction: column; gap: 4px; }
 
 @media (max-width: 760px) {
-  .nav-dial { display: none; }
-  .nav-dial + .chip-balance { margin-left: auto; }
+  .nav-hootbox { display: none; }
+  .nav-hootbox + .chip-balance { margin-left: auto; }
   .career-summary { grid-template-columns: 1fr 1fr; }
   .career-summary > div:nth-child(3) { border-left: 0; padding-left: 4px; }
   .career-summary > div:nth-child(n + 3) { border-top: 1px solid var(--line); }

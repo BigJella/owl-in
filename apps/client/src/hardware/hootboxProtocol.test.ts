@@ -1,18 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createGestures, createLineSplitter, DIAL_FAST_FACTOR, DIAL_HOLD_MS, parseDialLine, type DialEvent } from "./dialProtocol";
+import { createGestures, createLineSplitter, HOOTBOX_FAST_FACTOR, HOOTBOX_HOLD_MS, parseHootBoxLine, type HootBoxEvent } from "./hootboxProtocol";
 
-describe("parseDialLine", () => {
+describe("parseHootBoxLine", () => {
   it("reads protocol v1", () => {
-    expect(parseDialLine("OWL-DIAL 1")).toEqual({ type: "hello", version: 1 });
-    expect(parseDialLine("R+1")).toEqual({ type: "turn", steps: 1 });
-    expect(parseDialLine("R-3\r")).toEqual({ type: "turn", steps: -3 });
-    expect(parseDialLine("P1")).toEqual({ type: "key", key: "P", down: true });
-    expect(parseDialLine("A0")).toEqual({ type: "key", key: "A", down: false });
-    expect(parseDialLine("B1")).toEqual({ type: "key", key: "B", down: true });
+    expect(parseHootBoxLine("HOOTBOX 1")).toEqual({ type: "hello", version: 1 });
+    expect(parseHootBoxLine("R+1")).toEqual({ type: "turn", steps: 1 });
+    expect(parseHootBoxLine("R-3\r")).toEqual({ type: "turn", steps: -3 });
+    expect(parseHootBoxLine("P1")).toEqual({ type: "key", key: "P", down: true });
+    expect(parseHootBoxLine("A0")).toEqual({ type: "key", key: "A", down: false });
+    expect(parseHootBoxLine("B1")).toEqual({ type: "key", key: "B", down: true });
   });
 
   it("ignores anything else", () => {
-    for (const line of ["", "  ", "R+0", "R1", "C1", "B2", "hello", "R+1 R+1", "OWL-DIAL"]) expect(parseDialLine(line)).toBeNull();
+    for (const line of ["", "  ", "R+0", "R1", "C1", "B2", "hello", "R+1 R+1", "HOOTBOX"]) expect(parseHootBoxLine(line)).toBeNull();
   });
 });
 
@@ -28,7 +28,7 @@ describe("createLineSplitter", () => {
 });
 
 describe("createGestures", () => {
-  let events: DialEvent[];
+  let events: HootBoxEvent[];
   let clock: number;
   let g: ReturnType<typeof createGestures>;
   const kinds = () => events.map((e) => e.kind);
@@ -53,18 +53,18 @@ describe("createGestures", () => {
 
   it("a short B is a tap", () => {
     key("B", true);
-    vi.advanceTimersByTime(DIAL_HOLD_MS / 2);
+    vi.advanceTimersByTime(HOOTBOX_HOLD_MS / 2);
     key("B", false);
     expect(kinds()).toEqual(["holdStart", "holdEnd", "b"]);
-    vi.advanceTimersByTime(DIAL_HOLD_MS);
+    vi.advanceTimersByTime(HOOTBOX_HOLD_MS);
     expect(kinds()).toEqual(["holdStart", "holdEnd", "b"]);
   });
 
   it("holding B fires holdB once, while held, and swallows the release", () => {
     key("B", true);
-    vi.advanceTimersByTime(DIAL_HOLD_MS);
+    vi.advanceTimersByTime(HOOTBOX_HOLD_MS);
     expect(kinds()).toEqual(["holdStart", "holdEnd", "holdB"]);
-    vi.advanceTimersByTime(DIAL_HOLD_MS * 3);
+    vi.advanceTimersByTime(HOOTBOX_HOLD_MS * 3);
     key("B", false);
     expect(kinds()).toEqual(["holdStart", "holdEnd", "holdB"]);
   });
@@ -86,14 +86,14 @@ describe("createGestures", () => {
     expect(events).toEqual([
       { kind: "turn", steps: 1 },
       { kind: "turn", steps: 1 },
-      { kind: "turn", steps: -DIAL_FAST_FACTOR },
+      { kind: "turn", steps: -HOOTBOX_FAST_FACTOR },
     ]);
   });
 
   it("reset ends a pending hold without firing it", () => {
     key("B", true);
     g.reset();
-    vi.advanceTimersByTime(DIAL_HOLD_MS * 2);
+    vi.advanceTimersByTime(HOOTBOX_HOLD_MS * 2);
     expect(kinds()).toEqual(["holdStart", "holdEnd"]);
   });
 });

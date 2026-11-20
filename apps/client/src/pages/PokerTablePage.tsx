@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { formatDD, STAGE_LABEL, type PokerTableView } from "@owl-in/shared";
 import { ClockBlock, useNow, type Clock } from "../components/ClockBlock";
 import { socket } from "../networking/socket";
-import { DIAL_PRIORITY, useDial, useHoldState } from "../hardware/useDial";
+import { HOOTBOX_PRIORITY, useHootBox, useHoldState } from "../hardware/useHootBox";
 import { usePokerState, type ReceivedMessage } from "../networking/pokerStore";
 import { PokerScene } from "../game/poker/PokerScene";
 import { ActionBar } from "../game/poker/ActionBar";
@@ -156,10 +156,10 @@ export function PokerTablePage({
   const acting = view?.toAct ?? null;
   const actingName = acting === null ? "—" : (view?.seats[acting]?.name ?? "—");
 
-  // Owl Dial, page level: hold B = cash out (opens the Leave dialog), or back to the lobby once cashed out.
+  // HootBox, page level: hold B = cash out (opens the Leave dialog), or back to the lobby once cashed out.
   const leaveHold = useHoldState();
   const canLeave = cashedOut || (view !== null && view.leaveMode !== "queued");
-  useDial(
+  useHootBox(
     (event) => {
       leaveHold.track(event);
       if (event.kind === "holdStart" && canLeave) {
@@ -173,7 +173,7 @@ export function PokerTablePage({
       }
       return false;
     },
-    DIAL_PRIORITY.page,
+    HOOTBOX_PRIORITY.page,
   );
 
   return (
@@ -273,13 +273,13 @@ function ReadyPanel({ view, clock }: { view: PokerTableView; clock: Clock | null
   const notReady = humans.filter((s) => s!.ready === false).map((s) => s!.name);
   const me = view.mySeat === null ? null : view.seats[view.mySeat];
   const needMe = me?.ready === false;
-  useDial(
+  useHootBox(
     (event) => {
       if (event.kind !== "a" || !needMe || view.rebuy) return false;
       socket.emit("poker:ready");
       return true;
     },
-    DIAL_PRIORITY.panel,
+    HOOTBOX_PRIORITY.panel,
   );
 
   return (
@@ -323,16 +323,16 @@ function RebuyDialog(props: {
     });
   }
 
-  // Owl Dial: turn = buy-in amount, A = reload, hold B = cash out. Modal: nothing reaches the table behind it.
+  // HootBox: turn = buy-in amount, A = reload, hold B = cash out. Modal: nothing reaches the table behind it.
   const hold = useHoldState();
-  useDial((event) => {
+  useHootBox((event) => {
     hold.track(event);
     if (event.kind === "turn" && affordable) setAmount((a) => Math.min(rebuy.max, Math.max(rebuy.min, a + event.steps * bigBlind)));
     if (event.kind === "a" && affordable) socket.emit("poker:rebuy", amount, (result) => !result.ok && setError(result.error));
     if (event.kind === "holdStart") hold.start();
     if (event.kind === "holdB") onLeave();
     return true;
-  }, DIAL_PRIORITY.dialog);
+  }, HOOTBOX_PRIORITY.dialog);
 
   return (
     <div className="modal-backdrop">
@@ -382,12 +382,12 @@ function LeaveDialog({ view, onCancel, onConfirm }: { view: PokerTableView; onCa
   const me = view.mySeat === null ? null : view.seats[view.mySeat];
   const queued = view.leaveMode === "after-hand";
   const takeHome = me ? me.stack + me.bet : 0;
-  // Owl Dial: A = cash out, B = stay. Modal.
-  useDial((event) => {
+  // HootBox: A = cash out, B = stay. Modal.
+  useHootBox((event) => {
     if (event.kind === "a") onConfirm();
     if (event.kind === "b") onCancel();
     return true;
-  }, DIAL_PRIORITY.dialog);
+  }, HOOTBOX_PRIORITY.dialog);
 
   return (
     <div className="modal-backdrop" onClick={onCancel}>

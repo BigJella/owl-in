@@ -1,4 +1,4 @@
-// Minimal Web Serial typings (Chrome / Edge), just what the Owl Dial uses.
+// Minimal Web Serial typings (Chrome / Edge), just what the HootBox uses.
 
 interface SerialPortInfo {
   usbVendorId?: number;

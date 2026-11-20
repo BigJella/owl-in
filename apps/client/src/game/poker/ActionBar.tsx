@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { formatDD as fmt, type PokerAction, type PokerTableView } from "@owl-in/shared";
 import { socket } from "../../networking/socket";
-import { DIAL_PRIORITY, useDial, useDialConnected, useHoldState } from "../../hardware/useDial";
+import { HOOTBOX_PRIORITY, useHootBox, useHootBoxConnected, useHoldState } from "../../hardware/useHootBox";
 
 /**
  * Fold / check / call / raise controls, shown only when it's your turn.
@@ -23,17 +23,17 @@ export function ActionBar({ view }: { view: PokerTableView }) {
     if (legal) setRaiseTo(legal.minRaiseTo);
   }, [legal?.minRaiseTo, legal?.maxRaiseTo, view.handId, view.phase]);
 
-  // Owl Dial: turn = raise amount, press = raise, A = check/call, B = reset the amount, hold B = fold.
-  const dialOn = useDialConnected();
+  // HootBox: turn = raise amount, press = raise, A = check/call, B = reset the amount, hold B = fold.
+  const hootBoxOn = useHootBoxConnected();
   const hold = useHoldState();
-  useDial(
+  useHootBox(
     (event) => {
       hold.track(event);
       if (!legal || !me) return false;
-      const clampDial = (n: number) => Math.min(legal.maxRaiseTo, Math.max(legal.minRaiseTo, Math.round(n)));
+      const clampRaise = (n: number) => Math.min(legal.maxRaiseTo, Math.max(legal.minRaiseTo, Math.round(n)));
       switch (event.kind) {
         case "turn":
-          if (legal.canRaise) setRaiseTo(clampDial(raiseTo + event.steps * view.bigBlind));
+          if (legal.canRaise) setRaiseTo(clampRaise(raiseTo + event.steps * view.bigBlind));
           return true;
         case "press":
           if (legal.canRaise) socket.emit("poker:act", { type: "raise", to: raiseTo });
@@ -55,7 +55,7 @@ export function ActionBar({ view }: { view: PokerTableView }) {
           return false;
       }
     },
-    DIAL_PRIORITY.panel,
+    HOOTBOX_PRIORITY.panel,
     Boolean(legal && me),
   );
 
@@ -140,7 +140,7 @@ export function ActionBar({ view }: { view: PokerTableView }) {
             />
           </label>
           <button
-            className={`action raise ${dialOn ? "dial-focus" : ""}`}
+            className={`action raise ${hootBoxOn ? "hootbox-focus" : ""}`}
             onClick={() => raise(typed === "" || typedOutOfRange ? commitTyped() : raiseTo)}
           >
             {raiseIsAllIn ? "All-in" : verb} {fmt(raiseTo)}

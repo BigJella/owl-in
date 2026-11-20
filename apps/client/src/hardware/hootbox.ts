@@ -1,31 +1,31 @@
 /**
- * The Owl Dial connection (Web Serial) and event dispatch, kept outside React like the game stores.
+ * The HootBox connection (Web Serial) and event dispatch, kept outside React like the game stores.
  *
  * Dispatch: each handler has a priority (dialogs 2, table panels 1, the page 0). An event goes to the handlers from the
  * highest priority down until one returns true (consumed). `holdEnd` is the exception: every handler gets it, so a
  * hold bar always clears.
  */
-import { createGestures, createLineSplitter, parseDialLine, type DialEvent } from "./dialProtocol";
+import { createGestures, createLineSplitter, parseHootBoxLine, type HootBoxEvent } from "./hootboxProtocol";
 
-export type DialStatus = "unsupported" | "disconnected" | "connecting" | "connected";
-export type DialHandler = (event: DialEvent) => boolean | void;
+export type HootBoxStatus = "unsupported" | "disconnected" | "connecting" | "connected";
+export type HootBoxHandler = (event: HootBoxEvent) => boolean | void;
 
 const BAUD = 115200;
 
-let status: DialStatus = typeof navigator !== "undefined" && navigator.serial ? "disconnected" : "unsupported";
+let status: HootBoxStatus = typeof navigator !== "undefined" && navigator.serial ? "disconnected" : "unsupported";
 let port: SerialPort | null = null;
 let reader: ReadableStreamDefaultReader<string> | null = null;
 let lastError: string | null = null;
 const statusListeners = new Set<() => void>();
-const handlers: { handler: DialHandler; priority: number; order: number }[] = [];
+const handlers: { handler: HootBoxHandler; priority: number; order: number }[] = [];
 let order = 0;
 
-function setStatus(next: DialStatus) {
+function setStatus(next: HootBoxStatus) {
   status = next;
   statusListeners.forEach((l) => l());
 }
 
-function dispatch(event: DialEvent) {
+function dispatch(event: HootBoxEvent) {
   const sorted = [...handlers].sort((a, b) => b.priority - a.priority || b.order - a.order);
   if (event.kind === "holdEnd") {
     sorted.forEach((h) => h.handler(event));
@@ -36,7 +36,7 @@ function dispatch(event: DialEvent) {
 
 const gestures = createGestures(dispatch);
 const splitLine = createLineSplitter((line) => {
-  const raw = parseDialLine(line);
+  const raw = parseHootBoxLine(line);
   if (raw) gestures.feed(raw);
 });
 
@@ -81,7 +81,7 @@ async function open(p: SerialPort) {
   }
 }
 
-export const dial = {
+export const hootBox = {
   getStatus: () => status,
   getError: () => lastError,
   subscribeStatus(listener: () => void) {
@@ -91,7 +91,7 @@ export const dial = {
     };
   },
   /** Register a handler; returns the unregister function. */
-  on(handler: DialHandler, priority: number) {
+  on(handler: HootBoxHandler, priority: number) {
     const entry = { handler, priority, order: order++ };
     handlers.push(entry);
     return () => {
@@ -118,7 +118,7 @@ export const dial = {
     gestures.reset();
     setStatus("disconnected");
   },
-  /** Feed protocol lines as if they came from the board (tests and the dev console: `owlDial.emit("R+1")`). */
+  /** Feed protocol lines as if they came from the board (tests and the dev console: `hootBox.emit("R+1")`). */
   emit(...lines: string[]) {
     lines.forEach((line) => splitLine(`${line}\n`));
   },
@@ -135,4 +135,4 @@ if (navigator.serial) {
   navigator.serial.addEventListener("connect", () => void tryKnown());
 }
 
-if (import.meta.env.DEV) (window as unknown as { owlDial: typeof dial }).owlDial = dial;
+if (import.meta.env.DEV) (window as unknown as { hootBox: typeof hootBox }).hootBox = hootBox;
