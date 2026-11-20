@@ -115,6 +115,31 @@ h1, h2, h3, .display { font-family: var(--display); text-transform: uppercase; f
 .name-editor .name-save:disabled { background: var(--surface-2); border-color: var(--line); color: var(--muted); }
 .name-editor-msg { margin: 0; font-size: 12px; color: var(--danger); }
 .chip-balance { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+
+/* HootBox (hardware controller) */
+.nav-hootbox { margin-left: auto; margin-right: 24px; width: 168px; display: flex; justify-content: flex-end; }
+.nav-hootbox + .chip-balance { margin-left: 0; }
+.nav-hootbox .secondary { height: 32px; padding: 0 12px; font-size: 12px; letter-spacing: 1.5px; }
+.nav-hootbox-on {
+  display: flex; align-items: center; gap: 8px; color: var(--muted);
+  font-family: var(--display); font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase;
+}
+.nav-hootbox-on i { width: 7px; height: 7px; background: var(--gold); }
+.nav-hootbox-on button { border: 0; background: none; padding: 0 2px; color: var(--muted); font-size: 15px; line-height: 1; }
+.nav-hootbox-on button:hover { color: var(--gold); }
+/* What the dial / A will trigger. Flat 1px gold outline, no glow. */
+.hootbox-focus, [data-hb-focus] { outline: 1px solid var(--gold); outline-offset: 2px; }
+/* Rows and the chart: inside their own box, so the highlight never overlaps neighbours or shifts anything. */
+.room-row[data-hb-focus], .leader-row[data-hb-focus], tr[data-hb-focus], svg[data-hb-focus] { outline-offset: -1px; }
+/* Adjusting a value with the dial (press to start / stop): the control turns gold. */
+[data-hb-adjusting] { color: var(--gold); }
+[data-hb-adjusting] select, [data-hb-adjusting] input, select[data-hb-adjusting] { border-color: var(--gold); }
+[data-hb-adjusting] input[type="range"] { accent-color: var(--gold); }
+/* B-hold progress: a flat bar filling along the bottom of the target button over 1 s. */
+.has-hold { position: relative; overflow: hidden; }
+.hold-fill { position: absolute; left: 0; bottom: 0; height: 3px; width: 0; background: var(--muted); animation: hold-fill 1s linear forwards; pointer-events: none; }
+.hold-fill.danger { background: var(--danger); }
+@keyframes hold-fill { to { width: 100%; } }
 .chip-balance > span, .name-button { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.25; font-size: 13px; }
 /* Your name doubles as the rename button. */
 .name-button { border: 0; background: none; padding: 0; color: inherit; text-align: right; }
@@ -550,6 +575,8 @@ input[type=range] { accent-color: var(--gold); width: 100%; }
 .bj-history { display: flex; flex-direction: column; gap: 4px; }
 
 @media (max-width: 760px) {
+  .nav-hootbox { display: none; }
+  .nav-hootbox + .chip-balance { margin-left: auto; }
   .career-summary { grid-template-columns: 1fr 1fr; }
   .career-summary > div:nth-child(3) { border-left: 0; padding-left: 4px; }
   .career-summary > div:nth-child(n + 3) { border-top: 1px solid var(--line); }

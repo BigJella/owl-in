@@ -10,6 +10,7 @@ import {
   type TableStage,
 } from "@owl-in/shared";
 import { socket } from "../networking/socket";
+import { HOOTBOX_PRIORITY, useHootBox } from "../hardware/useHootBox";
 
 const fmt = formatDD;
 
@@ -75,22 +76,22 @@ export function PokerLobbyPage({ session, onBack }: PokerLobbyPageProps) {
 
   return (
     <section className="lobby">
-      <button className="back" onClick={onBack}>← Games</button>
+      <button className="back" data-hb-back onClick={onBack}>← Games</button>
       <div className="hero room-hero">
         <div>
           <p className="eyebrow">TEXAS HOLD'EM</p>
           <h1>Pick a table.</h1>
           <p>Bots keep every table at four players. Sit down and you'll replace one at the next hand.</p>
         </div>
-        <button className="primary" onClick={() => setDialog({ kind: "create" })}>+ Create Table</button>
+        <button className="primary" data-hb="lobby:create" onClick={() => setDialog({ kind: "create" })}>+ Create Table</button>
       </div>
 
       <div className="room-toolbar">
-        <label className="checkbox">
+        <label className="checkbox" data-hb="lobby:open-only">
           <input type="checkbox" checked={openOnly} onChange={(e) => setOpenOnly(e.target.checked)} />
           Open seats only
         </label>
-        <label className="sort-select">
+        <label className="sort-select" data-hb="lobby:sort" data-hb-adjust="select">
           Sort by
           <select
             value={`${sort.key}:${sort.dir}`}
@@ -113,6 +114,7 @@ export function PokerLobbyPage({ session, onBack }: PokerLobbyPageProps) {
             <button
               key={c.key}
               className={`sort-head ${sort.key === c.key ? "active" : ""}`}
+              data-hb={`sort:${c.key}`}
               aria-sort={sort.key === c.key ? (sort.dir === 1 ? "ascending" : "descending") : "none"}
               onClick={() => toggleSort(c.key)}
             >
@@ -126,12 +128,12 @@ export function PokerLobbyPage({ session, onBack }: PokerLobbyPageProps) {
         {rooms !== null && visible.length === 0 && (
           <p className="muted room-empty">No open seats right now. Create a table to start one.</p>
         )}
-        {visible.map((room) => {
+        {visible.map((room, i) => {
           const seated = room.humans + room.bots;
           const full = !isOpen(room);
           const here = session.roomId === room.id;
           return (
-            <div className="room-row" key={room.id}>
+            <div className="room-row" key={room.id} data-hb={`room:${room.id}`} data-hb-activate=".join" data-hb-initial={i === 0 ? "" : undefined}>
               <span className="room-name">
                 {room.name}
                 {room.highRoller && <em className="badge-high">HIGH ROLLER</em>}
@@ -176,12 +178,26 @@ function BuyInDialog({ session, room, onClose }: { session: Session; room: Poker
   const [buyIn, setBuyIn] = useState(Math.min(max, room.bigBlind * 60));
   const [error, setError] = useState<string | null>(null);
 
-  function submit(event: FormEvent) {
-    event.preventDefault();
+  function sitDown() {
     socket.emit("poker:join", { roomId: room.id, buyIn }, (result) => {
       if (!result.ok) setError(result.error);
     });
   }
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    sitDown();
+  }
+
+  // HootBox: turn = buy-in (±1 big blind), A or press = sit down, B = cancel. Modal.
+  useHootBox((event) => {
+    if (event.kind === "turn" && affordable) {
+      setBuyIn((n) => Math.min(max, Math.max(min, n + event.steps * room.bigBlind)));
+    }
+    if ((event.kind === "a" || event.kind === "press") && affordable) sitDown();
+    if (event.kind === "b") onClose();
+    return event.kind !== "holdEnd";
+  }, HOOTBOX_PRIORITY.dialog);
 
   return (
     <Modal title={`Join ${room.name}`} onClose={onClose}>
@@ -222,7 +238,7 @@ function CreateDialog({ session, onClose }: { session: Session; onClose: () => v
           Table name
           <input value={name} maxLength={24} onChange={(e) => setName(e.target.value)} />
         </label>
-        <label>
+        <label data-hb="create:blinds" data-hb-adjust="select" data-hb-initial>
           Blinds
           <select value={bigBlind} onChange={(e) => setBigBlind(Number(e.target.value))}>
             {ALLOWED_BIG_BLINDS.map((bb) => (
@@ -238,7 +254,7 @@ function CreateDialog({ session, onClose }: { session: Session; onClose: () => v
           <p className="form-error">You need at least {fmt(min)} in Dining Dollars for these blinds.</p>
         )}
         {error && <p className="form-error">{error}</p>}
-        <button className="primary" disabled={!affordable || !name.trim()}>Create and sit down</button>
+        <button className="primary" data-hb="create:submit" disabled={!affordable || !name.trim()}>Create and sit down</button>
       </form>
     </Modal>
   );
@@ -246,7 +262,7 @@ function CreateDialog({ session, onClose }: { session: Session; onClose: () => v
 
 function BuyInSlider(props: { min: number; max: number; value: number; step: number; onChange: (n: number) => void }) {
   return (
-    <label>
+    <label data-hb="buy-in" data-hb-adjust="range">
       Buy-in <strong className="gold">{fmt(props.value)}</strong>
       <input
         type="range"
@@ -270,7 +286,7 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>{title}</h2>
-          <button className="close" onClick={onClose} aria-label="Close">×</button>
+          <button className="close" data-hb-back onClick={onClose} aria-label="Close">×</button>
         </div>
         {children}
       </div>

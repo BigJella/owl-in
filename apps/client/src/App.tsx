@@ -11,6 +11,8 @@ import { BlackjackLobbyPage } from "./pages/BlackjackLobbyPage";
 import { BlackjackTablePage } from "./pages/BlackjackTablePage";
 import { CareerPage } from "./pages/CareerPage";
 import { NameEditor } from "./components/NameEditor";
+import { HootBoxControl } from "./components/HootBoxControl";
+import { useHootBoxNavigation } from "./hardware/useHootBoxNavigation";
 import { LeaderboardPage } from "./pages/LeaderboardPage";
 
 type Screen = "home" | "poker" | "blackjack" | "career" | "leaderboard";
@@ -185,6 +187,15 @@ export default function App() {
     setScreen("poker");
   }
 
+  // HootBox site navigation: everywhere except the tables (they have their own mappings).
+  const atTable = Boolean(session?.roomId) || showingResult;
+  const hootBoxScreen = !session ? "name" : screen === "career" ? `career:${careerId ?? "me"}` : screen;
+  const { homeHolding } = useHootBoxNavigation({
+    active: !banned && !atTable,
+    screenKey: hootBoxScreen,
+    onHome: session && screen !== "home" ? () => setScreen("home") : undefined,
+  });
+
   let page;
   if (banned) {
     page = (
@@ -269,8 +280,15 @@ export default function App() {
               ["Leaderboard", () => setScreen("leaderboard")],
             ] as const
           ).map(([label, go]) => (
-            <button key={label} aria-disabled={Boolean(session?.roomId)} onClick={(e) => navigate(go, e.currentTarget)}>
+            <button
+              key={label}
+              className={label === "Games" ? "has-hold" : undefined}
+              data-hb={session ? `nav:${label.toLowerCase()}` : undefined}
+              aria-disabled={Boolean(session?.roomId)}
+              onClick={(e) => navigate(go, e.currentTarget)}
+            >
               {label}
+              {label === "Games" && homeHolding && <span className="hold-fill" />}
             </button>
           ))}
         </div>
@@ -294,6 +312,7 @@ export default function App() {
             </button>
           </div>
         )}
+        <HootBoxControl />
         {session && (
           <div className="chip-balance">
             <button
