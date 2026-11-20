@@ -174,7 +174,7 @@ function PokerHands({ hands }: { hands: PokerHandRecord[] }) {
       </thead>
       <tbody>
         {hands.map((h) => (
-          <tr key={h.handId}>
+          <tr key={h.handId} data-hb={`hand:${h.handId}`}>
             <td>#{h.handId}</td>
             <td>{when(h.at)}</td>
             <td>{h.position ?? "—"}</td>
@@ -217,7 +217,7 @@ function BlackjackRounds({ rounds }: { rounds: BlackjackRoundRecord[] }) {
       </thead>
       <tbody>
         {rounds.map((r) => (
-          <tr key={r.roundId}>
+          <tr key={r.roundId} data-hb={`round:${r.roundId}`}>
             <td>#{r.roundId}</td>
             <td>{when(r.at)}</td>
             <td>
@@ -253,7 +253,7 @@ function BlackjackRounds({ rounds }: { rounds: BlackjackRoundRecord[] }) {
 /** Loads one table session's hands (the player site uses the socket, the admin panel the management API). */
 export type LoadSession = (sessionId: string) => Promise<HandRecord[]>;
 
-function SessionRow({ session, loadSession }: { session: TableSession; loadSession: LoadSession }) {
+function SessionRow({ session, loadSession, first }: { session: TableSession; loadSession: LoadSession; first: boolean }) {
   const [open, setOpen] = useState(false);
   const [hands, setHands] = useState<HandRecord[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -269,7 +269,12 @@ function SessionRow({ session, loadSession }: { session: TableSession; loadSessi
   const s = session;
   return (
     <Fragment>
-      <tr className={`session-row ${open ? "open" : ""}`} onClick={toggle}>
+      <tr
+        className={`session-row ${open ? "open" : ""}`}
+        data-hb={`session:${session.id}`}
+        data-hb-initial={first ? "" : undefined}
+        onClick={toggle}
+      >
         <td>
           <i className="caret">{open ? "▾" : "▸"}</i>
           {s.game === "poker" ? "Poker" : "Blackjack"}
@@ -361,8 +366,8 @@ export function CareerDetails({ career: c, loadSession }: { career: CareerView; 
               </tr>
             </thead>
             <tbody>
-              {c.sessions.map((s) => (
-                <SessionRow key={s.id} session={s} loadSession={loadSession} />
+              {c.sessions.map((s, i) => (
+                <SessionRow key={s.id} session={s} loadSession={loadSession} first={i === 0} />
               ))}
             </tbody>
           </table>
@@ -403,7 +408,7 @@ export function CareerPage(props: { playerId: string | null; onBack: () => void;
       socket.emit("career:session", { playerId, sessionId }, (result) => (result.ok ? resolve(result.hands) : reject(new Error(result.error)))),
     );
 
-  const back = <button className="back" onClick={onBack}>{playerId ? "← Leaderboard" : "← Games"}</button>;
+  const back = <button className="back" data-hb-back onClick={onBack}>{playerId ? "← Leaderboard" : "← Games"}</button>;
   if (!career) {
     return (
       <section className="lobby">

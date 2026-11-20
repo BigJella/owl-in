@@ -396,7 +396,7 @@ hardware/hootbox/            HootBox firmware (Arduino sketch + README) for the 
 - [x] Shared fixed-grid table strip (identical for all players, no shifting); sidebar with static info top / controls bottom;
       clock + "+20s next turn" preview between turns
 - [x] Git repo on `main`, pushed to GitHub (`origin` → BigJella/owl-in)
-- [x] Tests: 127 Vitest tests (poker + blackjack engines, rooms with fake timers incl. soaks); `scripts/bots.mjs` and
+- [x] Tests: 143 Vitest tests (poker + blackjack engines, rooms with fake timers incl. soaks); `scripts/bots.mjs` and
       `scripts/blackjack-bots.mjs` e2e
 - [x] Blackjack: engine (shoe, S17, 3:2, double/split/insurance/late surrender), BlackjackRoom (spots, bot fill 1–3,
       betting window, insurance, clock), lobby + table page + Pixi renderer (shoe/tray levels, deal/flip/payout/sweep/shuffle
@@ -635,6 +635,29 @@ port).
 - Any dialog: A = its main button (Leave / Reload / Cash out), B = cancel. Rebuy dialog: turn = amount, A = reload,
   hold B = cash out.
 
+**Site navigation (away from the tables; agreed with the user).** One grammar on every other screen:
+**turn** = move the gold highlight through the screen's items in reading order (turning up past the first item reaches
+the nav links), **A** = do it (open / join / toggle / expand), **B** = back one screen (the page's `← Games` /
+`← Leaderboard` button) or cancel a dialog, **hold B** = jump to Games, **press** = adjust a value control (select,
+slider, the career chart's crosshair): turn changes the value, press / A / B ends it. Text boxes are skipped
+(keyboard only: create-table keeps its default name).
+- Focus is tracked **by item** (`room:<id>`, `leader:<playerId>`, `session:<id>`, …), so it stays put while lists reorder,
+  and is remembered per screen (B from a career lands back on that leaderboard row). Nothing is drawn until a HootBox
+  is connected or an event arrives (`hootBox.emit` in dev).
+- Start points: Games → Find a Table (poker); lobbies → first table row (A = Join / Return; full tables skipped;
+  blackjack joins at once); buy-in dialog: turn = ±1 BB, A or press = sit down, B = cancel; create dialog → Blinds /
+  Limits; leaderboard → your row (A opens public careers); career → first table-history row (A expands it; its hand
+  rows join the order).
+- Switching tables: hold B at the table → Leave dialog → A (mid-hand the cash-out is queued; hold B again on the
+  result view) → that game's lobby, focus on the table you left.
+- Opt-in attributes (`hardware/navigation.ts`): `data-hb="<stable key>"` (focusable), `data-hb-initial`,
+  `data-hb-back` (what B clicks), `data-hb-adjust="range" | "select" | "keys"`, `data-hb-activate="<selector>"` (A
+  clicks that child; the item is skipped while it's disabled). **New pages and controls must opt in.** Hidden elements
+  are skipped (e.g. the sort `<select>` only exists on phones; on desktop the column headers sort). The highlight is a
+  `data-hb-focus` attribute (`data-hb-adjusting` while adjusting), not a class, so React re-renders never wipe it.
+- `hardware/useHootBoxNavigation.ts` is mounted once in `App` (page priority, off at the tables). Table pages and
+  modal dialogs with their own handlers (buy-in, table dialogs) win by priority.
+
 **Browser side** (`apps/client/src/hardware/`):
 - `hootboxProtocol.ts`: `parseHootBoxLine`, `createLineSplitter`, and `createGestures` (taps fire on release; B held
   `HOOTBOX_HOLD_MS` = 1 s fires `holdB` once and swallows its release; detents < 40 ms apart count ×5). Tested in
@@ -643,6 +666,8 @@ port).
   and dispatch. Handlers have a **priority** (`HOOTBOX_PRIORITY`: dialog 2 > panel 1 > page 0); an event goes down the list
   until a handler returns `true`. `holdStart` / `holdEnd` drive the hold bar; `holdEnd` is broadcast to everyone.
   Dialogs return `true` for everything (modal).
+- `navigation.ts` (pure helpers: `stepIndex`, `stepFocus`, `pickFocus`, DOM item collection, value adjust; tested in
+  `navigation.test.ts`) and `useHootBoxNavigation.ts` (site navigation, above).
 - `useHootBox.ts`: `useHootBox(handler, priority, active)`, `useHootBoxConnected`, `useHoldState` (the hold bar), `useHootBoxMenu` /
   `stepIndex` (highlights that skip disabled entries).
 - UI: "Connect HootBox" in the nav (`components/HootBoxControl.tsx`; hidden without Web Serial and below 760px). `.hootbox-focus`

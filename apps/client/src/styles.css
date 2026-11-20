@@ -128,7 +128,13 @@ h1, h2, h3, .display { font-family: var(--display); text-transform: uppercase; f
 .nav-hootbox-on button { border: 0; background: none; padding: 0 2px; color: var(--muted); font-size: 15px; line-height: 1; }
 .nav-hootbox-on button:hover { color: var(--gold); }
 /* What the dial / A will trigger. Flat 1px gold outline, no glow. */
-.hootbox-focus { outline: 1px solid var(--gold); outline-offset: 2px; }
+.hootbox-focus, [data-hb-focus] { outline: 1px solid var(--gold); outline-offset: 2px; }
+/* Rows and the chart: inside their own box, so the highlight never overlaps neighbours or shifts anything. */
+.room-row[data-hb-focus], .leader-row[data-hb-focus], tr[data-hb-focus], svg[data-hb-focus] { outline-offset: -1px; }
+/* Adjusting a value with the dial (press to start / stop): the control turns gold. */
+[data-hb-adjusting] { color: var(--gold); }
+[data-hb-adjusting] select, [data-hb-adjusting] input, select[data-hb-adjusting] { border-color: var(--gold); }
+[data-hb-adjusting] input[type="range"] { accent-color: var(--gold); }
 /* B-hold progress: a flat bar filling along the bottom of the target button over 1 s. */
 .has-hold { position: relative; overflow: hidden; }
 .hold-fill { position: absolute; left: 0; bottom: 0; height: 3px; width: 0; background: var(--muted); animation: hold-fill 1s linear forwards; pointer-events: none; }

@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { hootBox, type HootBoxHandler } from "./hootbox";
 import type { HootBoxEvent } from "./hootboxProtocol";
+import { stepIndex } from "./navigation";
+
+export { stepIndex };
 
 /** Dialogs win over table panels, which win over the page. */
 export const HOOTBOX_PRIORITY = { page: 0, panel: 1, dialog: 2 } as const;
@@ -38,19 +41,6 @@ export function useHoldState() {
       if (event.kind === "holdEnd") setHolding(false);
     },
   };
-}
-
-/** Move `steps` entries from `from` through the enabled ones (disabled skipped, clamped at the ends). */
-export function stepIndex(enabled: boolean[], from: number, steps: number): number {
-  let at = from;
-  const dir = Math.sign(steps);
-  for (let n = Math.abs(steps); n > 0; n -= 1) {
-    let next = at + dir;
-    while (next >= 0 && next < enabled.length && !enabled[next]) next += dir;
-    if (next < 0 || next >= enabled.length) break;
-    at = next;
-  }
-  return at;
 }
 
 /**

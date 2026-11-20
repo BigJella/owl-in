@@ -168,7 +168,7 @@ export function ChipChart({ points }: { points: ChipPoint[] }) {
           {points.length > 50 && (
             <div className="segmented chip-range" role="radiogroup" aria-label="Range">
               {RANGES.map((r) => (
-                <button key={r.key} type="button" role="radio" aria-checked={range === r.key} className={range === r.key ? "on" : ""} onClick={() => setRange(r.key)}>
+                <button key={r.key} type="button" role="radio" aria-checked={range === r.key} className={range === r.key ? "on" : ""} data-hb={`chart:range:${r.key}`} onClick={() => setRange(r.key)}>
                   {r.label}
                 </button>
               ))}
@@ -189,6 +189,8 @@ export function ChipChart({ points }: { points: ChipPoint[] }) {
                 role="img"
                 aria-label={summary}
                 tabIndex={0}
+                data-hb="chart"
+                data-hb-adjust="keys"
                 onKeyDown={onKey}
                 onBlur={() => setActive(null)}
               >

@@ -77,22 +77,22 @@ export function BlackjackLobbyPage({ session, onBack }: { session: Session; onBa
 
   return (
     <section className="lobby">
-      <button className="back" onClick={onBack}>← Games</button>
+      <button className="back" data-hb-back onClick={onBack}>← Games</button>
       <div className="hero room-hero">
         <div>
           <p className="eyebrow">BLACKJACK</p>
           <h1>Pick a table.</h1>
           <p>Seven spots, six decks. Bet on up to three spots; bots hold spots 1–3 until you want them.</p>
         </div>
-        <button className="primary" onClick={() => setCreating(true)}>+ Create Table</button>
+        <button className="primary" data-hb="lobby:create" onClick={() => setCreating(true)}>+ Create Table</button>
       </div>
 
       <div className="room-toolbar">
-        <label className="checkbox">
+        <label className="checkbox" data-hb="lobby:open-only">
           <input type="checkbox" checked={openOnly} onChange={(e) => setOpenOnly(e.target.checked)} />
           Open spots only
         </label>
-        <label className="sort-select">
+        <label className="sort-select" data-hb="lobby:sort" data-hb-adjust="select">
           Sort by
           <select
             value={`${sort.key}:${sort.dir}`}
@@ -116,6 +116,7 @@ export function BlackjackLobbyPage({ session, onBack }: { session: Session; onBa
             <button
               key={c.key}
               className={`sort-head ${sort.key === c.key ? "active" : ""}`}
+              data-hb={`sort:${c.key}`}
               aria-sort={sort.key === c.key ? (sort.dir === 1 ? "ascending" : "descending") : "none"}
               onClick={() => toggleSort(c.key)}
             >
@@ -129,11 +130,11 @@ export function BlackjackLobbyPage({ session, onBack }: { session: Session; onBa
         {rooms !== null && visible.length === 0 && (
           <p className="muted room-empty">No open spots right now. Create a table to start one.</p>
         )}
-        {visible.map((room) => {
+        {visible.map((room, i) => {
           const here = session.roomId === room.id;
           const full = openSpots(room) === 0;
           return (
-            <div className="room-row" key={room.id}>
+            <div className="room-row" key={room.id} data-hb={`room:${room.id}`} data-hb-activate=".join" data-hb-initial={i === 0 ? "" : undefined}>
               <span className="room-name">
                 {room.name}
                 {room.highRoller && <em className="badge-high">HIGH ROLLER</em>}
@@ -188,7 +189,7 @@ function CreateDialog({ session, onClose }: { session: Session; onClose: () => v
           Table name
           <input value={name} maxLength={24} onChange={(e) => setName(e.target.value)} />
         </label>
-        <label>
+        <label data-hb="create:limits" data-hb-adjust="select" data-hb-initial>
           Limits
           <select value={minBet} onChange={(e) => setMinBet(Number(e.target.value))}>
             {BJ_ALLOWED_MIN_BETS.map((min) => (
@@ -200,7 +201,7 @@ function CreateDialog({ session, onClose }: { session: Session; onClose: () => v
         </label>
         {!affordable && <p className="form-error">You need at least {fmt(minBet)} in Dining Dollars for these limits.</p>}
         {error && <p className="form-error">{error}</p>}
-        <button className="primary" disabled={!affordable || !name.trim()}>
+        <button className="primary" data-hb="create:submit" disabled={!affordable || !name.trim()}>
           Create and sit down
         </button>
       </form>

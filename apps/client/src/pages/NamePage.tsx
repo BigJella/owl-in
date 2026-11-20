@@ -1,8 +1,8 @@
 import { useState, type FormEvent } from "react";
 
 /** Public / Private: two square buttons, the chosen one solid gold. */
-export function PrivacyToggle(props: { value: boolean | null; onChange: (isPublic: boolean) => void; disabled?: boolean }) {
-  const { value, onChange, disabled = false } = props;
+export function PrivacyToggle(props: { value: boolean | null; onChange: (isPublic: boolean) => void; disabled?: boolean; hbInitial?: boolean }) {
+  const { value, onChange, disabled = false, hbInitial = false } = props;
   return (
     <div className="segmented" role="radiogroup" aria-label="Career visibility">
       {[true, false].map((isPublic) => (
@@ -12,6 +12,8 @@ export function PrivacyToggle(props: { value: boolean | null; onChange: (isPubli
           role="radio"
           aria-checked={value === isPublic}
           className={value === isPublic ? "on" : ""}
+          data-hb={isPublic ? "privacy:public" : "privacy:private"}
+          data-hb-initial={hbInitial && isPublic ? "" : undefined}
           disabled={disabled}
           onClick={() => onChange(isPublic)}
         >
@@ -67,7 +69,7 @@ export function NamePage({ initialName, initialPublic, nameLocked = false, error
         />
         <div className="privacy-choice">
           <small>Career</small>
-          <PrivacyToggle value={careerPublic} onChange={setCareerPublic} />
+          <PrivacyToggle value={careerPublic} onChange={setCareerPublic} hbInitial={nameLocked} />
           <p className="muted">
             {careerPublic === null
               ? "Pick one to continue. You can change it later on your career page."
@@ -77,7 +79,12 @@ export function NamePage({ initialName, initialPublic, nameLocked = false, error
           </p>
         </div>
         {error && <p className="form-error">{error}</p>}
-        <button className="primary" disabled={busy || !name.trim() || careerPublic === null}>
+        <button
+          className="primary"
+          data-hb="name:enter"
+          data-hb-initial={nameLocked ? undefined : ""}
+          disabled={busy || !name.trim() || careerPublic === null}
+        >
           {busy ? "Connecting…" : "Enter"} <b>→</b>
         </button>
       </form>

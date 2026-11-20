@@ -24,7 +24,7 @@ export function LeaderboardPage({ onOpen, onBack }: { onOpen: (playerId: string)
 
   return (
     <section className="lobby">
-      <button className="back" onClick={onBack}>← Games</button>
+      <button className="back" data-hb-back onClick={onBack}>← Games</button>
       <div className="hero room-hero">
         <div>
           <p className="eyebrow">LEADERBOARD</p>
@@ -44,7 +44,13 @@ export function LeaderboardPage({ onOpen, onBack }: { onOpen: (playerId: string)
         {rows === null && <p className="muted room-empty">Loading…</p>}
         {rows?.length === 0 && <p className="muted room-empty">Nobody has played yet.</p>}
         {rows?.map((row) => (
-          <div className={`leader-row ${row.isMe ? "me" : ""}`} key={row.playerId}>
+          <div
+            className={`leader-row ${row.isMe ? "me" : ""}`}
+            key={row.playerId}
+            data-hb={`leader:${row.playerId}`}
+            data-hb-activate=".join"
+            data-hb-initial={row.isMe ? "" : undefined}
+          >
             <span className="leader-rank">{row.rank}</span>
             <span className="leader-name">
               <i className={`dot ${row.online ? "on" : ""}`} title={row.online ? "Online" : "Offline"} />

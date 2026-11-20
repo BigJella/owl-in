@@ -18,8 +18,8 @@ export function HomePage({ name, lobby, onPoker, onBlackjack, onCareer, onLeader
         <p>Play for Dining Dollars. Outplay the bots.</p>
         <div className="online"><i /> {lobby.playersOnline} players online</div>
         <div className="hero-links">
-          <button className="secondary" onClick={onCareer}>Your career</button>
-          <button className="secondary" onClick={onLeaderboard}>Leaderboard</button>
+          <button className="secondary" data-hb="home:career" onClick={onCareer}>Your career</button>
+          <button className="secondary" data-hb="home:leaderboard" onClick={onLeaderboard}>Leaderboard</button>
         </div>
       </div>
 
@@ -35,7 +35,7 @@ export function HomePage({ name, lobby, onPoker, onBlackjack, onCareer, onLeader
               <h2>Texas Hold'em</h2>
             </div>
             <span className="table-count">{lobby.pokerPlayers} at tables</span>
-            <button onClick={onPoker}>Find a Table <b>→</b></button>
+            <button data-hb="home:poker" data-hb-initial onClick={onPoker}>Find a Table <b>→</b></button>
           </div>
         </article>
 
@@ -50,7 +50,7 @@ export function HomePage({ name, lobby, onPoker, onBlackjack, onCareer, onLeader
               <h2>Blackjack</h2>
             </div>
             <span className="table-count">{lobby.blackjackPlayers} at tables</span>
-            <button onClick={onBlackjack}>Find a Table <b>→</b></button>
+            <button data-hb="home:blackjack" onClick={onBlackjack}>Find a Table <b>→</b></button>
           </div>
         </article>
       </div>
